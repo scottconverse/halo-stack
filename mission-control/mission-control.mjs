@@ -37,16 +37,69 @@ async function lmsPs() {
 // 2026-08-17): POST /api/<method> with a client-request envelope. The disk
 // scrape below survives ONLY as the fallback for when dsh itself is down.
 async function dshRpc(method, payload = {}) {
+  // Remote-contributed methods (slash names, e.g. pluginInventory/list) wrap
+  // their payload in an args field; ordinary gateway methods take it flat.
+  const body = method.includes('/') ? { args: payload } : payload;
   const res = await fetch(`http://127.0.0.1:3080/api/${method}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ type: 'client-request', rpcId: `mc-${Date.now()}`, method, payload }),
+    body: JSON.stringify({ type: 'client-request', rpcId: `mc-${Date.now()}`, method, payload: body }),
     signal: AbortSignal.timeout(3000),
   });
   const msg = await res.json();
   if (!msg?.result?.ok) throw new Error(`${method}: ${msg?.result?.error?.code || res.status}`);
   return msg.result.value;
 }
+
+// ── Full-telemetry additions (operator directive 2026-08-18: "add them all") ──
+
+// Slow-changing pulls, cached ~30 s.
+const slowCache = { at: 0, presets: null, plugins: null };
+async function slowPulls() {
+  if (Date.now() - slowCache.at < 30000 && slowCache.presets) return slowCache;
+  try {
+    const [pr, pi] = await Promise.all([dshRpc('agentPreset.list'), dshRpc('pluginInventory/list')]);
+    slowCache.presets = (pr.presets || []).map(p => ({ id: p.id, trust: p.trust, isDefault: !!p.isDefault, broken: p.broken || null }));
+    const entries = pi.entries || [];
+    const active = entries.filter(e => e.enabled && e.fiberPhase === 'active');
+    const disabled = entries.filter(e => !e.enabled);
+    const abnormal = entries.filter(e => e.enabled && e.fiberPhase !== 'active');
+    slowCache.plugins = {
+      total: entries.length, active: active.length, disabled: disabled.length, abnormal: abnormal.length,
+      disabledList: disabled.map(e => e.entryId).slice(0, 12),
+      abnormalList: abnormal.map(e => `${e.entryId} (${e.fiberPhase ?? 'no phase'})`).slice(0, 12),
+    };
+    slowCache.at = Date.now();
+  } catch { /* keep last good cache; dsh may be down */ }
+  return slowCache;
+}
+
+// Persistent mux stream: one connection carries session/jobs (and queue)
+// frames for every session. Snapshot semantics: each frame replaces that
+// session's job set. Reconnects with backoff; state marks liveness honestly.
+// The events endpoints are WebSockets (GET answers 426): on connect the mux
+// auto-subscribes to every visible session and pushes server-request frames.
+const mux = { connected: false, lastFrameAt: 0, jobs: new Map(), queues: new Map() };
+function muxConnect() {
+  let ws;
+  try { ws = new WebSocket('ws://127.0.0.1:3080/api/events.mux'); }
+  catch { setTimeout(muxConnect, 10000); return; }
+  ws.onopen = () => { mux.connected = true; };
+  ws.onmessage = (e) => {
+    try {
+      const frame = JSON.parse(String(e.data));
+      mux.lastFrameAt = Date.now();
+      const m = frame.method;
+      const p = frame.payload || {};
+      if (m === 'session/jobs' && p.sessionId) mux.jobs.set(p.sessionId, p.jobs || p.items || []);
+      if (m === 'session/queue' && p.sessionId) mux.queues.set(p.sessionId, (p.queue || p.items || []).length);
+    } catch { /* ignore malformed frame */ }
+  };
+  const down = () => { mux.connected = false; setTimeout(muxConnect, 10000); };
+  ws.onclose = down;
+  ws.onerror = () => { try { ws.close(); } catch { /* already closed */ } };
+}
+muxConnect();
 
 async function listSessionsApi(limit = 8) {
   const [ws, sess] = await Promise.all([dshRpc('workspace.list'), dshRpc('session.list')]);
@@ -58,15 +111,26 @@ async function listSessionsApi(limit = 8) {
     .filter(s => !s.blank && !archived.has(s.sessionId))
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
     .slice(0, limit)
-    .map(s => ({
-      workspace: wsTitle.get(wsOfSession.get(s.sessionId)) || s.cwd || 'Ungrouped',
-      id: s.sessionId.replace(/^session-/, '').slice(0, 8),
-      title: s.projections?.values?.title || null,
-      mtime: s.updatedAt || 0,
-      running: !!s.running,
-      preset: s.agentPreset || '',
-      turns: s.projections?.values?.sessionStats?.turns ?? null,
-    }));
+    .map(s => {
+      const v = s.projections?.values || {};
+      const st = v.sessionStats || {};
+      const tk = v.tokenUsage || {};
+      return {
+        workspace: wsTitle.get(wsOfSession.get(s.sessionId)) || s.cwd || 'Ungrouped',
+        id: s.sessionId.replace(/^session-/, '').slice(0, 8),
+        sessionId: s.sessionId,
+        title: v.title || null,
+        goal: v.goal || null,
+        mtime: s.updatedAt || 0,
+        running: !!s.running,
+        preset: s.agentPreset || '',
+        turns: st.turns ?? null,
+        kTokIn: Math.round(((tk.uncachedInputTokens || 0) + (tk.cacheReadTokens || 0)) / 1000),
+        kTokOut: Math.round((tk.outputTokens || 0) / 1000 * 10) / 10,
+        ttftS: st.ttftSteps ? Math.round(st.ttftMs / st.ttftSteps / 1000) : null,
+        decodeTps: st.decodeMs ? Math.round(st.decodeTokens / (st.decodeMs / 1000) * 10) / 10 : null,
+      };
+    });
 }
 
 // Fallback only — dsh down means no API; a rough directory listing beats nothing.
@@ -123,6 +187,17 @@ async function status() {
       gb: Math.round((m.sizeBytes || 0) / 1e9 * 10) / 10,
     })),
     sessions, sessionsSource,
+    presets: dshUp ? (await slowPulls()).presets : null,
+    plugins: dshUp ? (await slowPulls()).plugins : null,
+    jobs: {
+      streamConnected: mux.connected,
+      lastFrameAgeS: mux.lastFrameAt ? Math.round((Date.now() - mux.lastFrameAt) / 1000) : null,
+      active: [...mux.jobs.entries()].flatMap(([sid, list]) => (list || []).map(j => ({
+        session: sid.replace(/^session-/, '').slice(0, 8),
+        id: j.jobId || j.id || '?', kind: j.kind || '', state: j.state || j.status || (j.running ? 'running' : ''),
+      }))),
+      queuedInputs: [...mux.queues.values()].reduce((a, b) => a + b, 0),
+    },
     memoryEntities: memoryCount(),
     freeRamGB: Math.round(os.freemem() / 1e9 * 10) / 10,
   };
@@ -163,6 +238,9 @@ button:hover{background:#164058}a{color:var(--teal)}
 <button onclick="act('unload-worker')">Unload Worker</button><button onclick="act('unload-all')">Unload All</button>
 <div id="msg"></div></div>
 <div class="card"><h2>Recent sessions <span id="ssrc" class="mut"></span></h2><div id="sessions" class="mono"></div></div>
+<div class="card"><h2>Plugin health</h2><div id="plugins"></div></div>
+<div class="card"><h2>Background jobs <span id="jsrc" class="mut"></span></h2><div id="jobs" class="mono"></div></div>
+<div class="card"><h2>Agent presets</h2><div id="presets"></div></div>
 <div class="card"><h2>System</h2><div id="system"></div></div>
 </div>
 <script>
@@ -177,7 +255,11 @@ async function refresh(){try{
   document.getElementById('services').innerHTML=svc.map(([n,up])=>'<div class="row"><span><span class="dot '+(up?'up':'down')+'"></span>'+n+'</span><span class="k">'+(up?'up':'down')+'</span></div>').join('');
   document.getElementById('models').innerHTML=s.models.length?s.models.map(m=>'<div class="row"><span><span class="dot '+(m.status==='idle'?'up':'busy')+'"></span>'+esc(m.identifier)+'</span><span class="k">'+esc(m.quant)+' · '+(m.context/1024|0)+'K · '+m.gb+' GB · '+esc(m.status)+(m.queued?' · queue '+m.queued:'')+'</span></div>').join(''):'<div class="mut">no models loaded</div>';
   document.getElementById('ssrc').textContent='('+(s.sessionsSource||'')+')';
-  document.getElementById('sessions').innerHTML=s.sessions.length?s.sessions.map(x=>'<div class="row"><span><span class="dot '+(x.running?'busy':'up')+'"></span>'+esc(x.title||x.id)+(x.preset?' <span class="mut">['+esc(x.preset)+']</span>':'')+'</span><span class="k">'+esc(x.workspace)+(x.turns!=null?' · '+x.turns+' turns':'')+' · '+new Date(x.mtime).toLocaleTimeString()+'</span></div>').join(''):'<div class="mut">none</div>';
+  document.getElementById('sessions').innerHTML=s.sessions.length?s.sessions.map(x=>'<div class="row"><span><span class="dot '+(x.running?'busy':'up')+'"></span>'+esc(x.title||x.id)+(x.preset?' <span class="mut">['+esc(x.preset)+']</span>':'')+'</span><span class="k">'+esc(x.workspace)+(x.turns!=null?' · '+x.turns+' turns':'')+(x.kTokIn?' · '+x.kTokIn+'K in/'+x.kTokOut+'K out':'')+(x.decodeTps?' · '+x.decodeTps+' t/s':'')+' · '+new Date(x.mtime).toLocaleTimeString()+'</span></div>').join(''):'<div class="mut">none</div>';
+  if(s.plugins){document.getElementById('plugins').innerHTML='<div class="row"><span><span class="dot '+(s.plugins.abnormal?'down':'up')+'"></span>'+s.plugins.active+' active · '+s.plugins.disabled+' disabled · '+s.plugins.abnormal+' abnormal</span><span class="k">of '+s.plugins.total+' rows</span></div>'+(s.plugins.abnormalList.length?s.plugins.abnormalList.map(p=>'<div class="row"><span style="color:var(--red)">'+esc(p)+'</span></div>').join(''):'')+(s.plugins.disabledList.length?'<div class="row"><span class="mut">disabled: '+esc(s.plugins.disabledList.join(', '))+'</span></div>':'')}else{document.getElementById('plugins').innerHTML='<div class="mut">dsh down — no inventory</div>'}
+  document.getElementById('jsrc').textContent=s.jobs.streamConnected?'(stream live)':'(stream down)';
+  document.getElementById('jobs').innerHTML=(s.jobs.active.length?s.jobs.active.map(j=>'<div class="row"><span><span class="dot busy"></span>'+esc(j.kind||'job')+' '+esc(j.id)+'</span><span class="k">'+esc(j.session)+' · '+esc(j.state)+'</span></div>').join(''):'<div class="mut">no active jobs</div>')+(s.jobs.queuedInputs?'<div class="row"><span class="k">queued inputs: '+s.jobs.queuedInputs+'</span></div>':'');
+  if(s.presets){document.getElementById('presets').innerHTML=s.presets.map(p=>'<div class="row"><span><span class="dot '+(p.broken?'down':'up')+'"></span>'+esc(p.id)+(p.isDefault?' <span style="color:var(--teal)">★ default</span>':'')+'</span><span class="k">'+esc(p.trust)+(p.broken?' · <span style=\"color:var(--red)\">'+esc(String(p.broken))+'</span>':'')+'</span></div>').join('')}else{document.getElementById('presets').innerHTML='<div class="mut">dsh down — no roster</div>'}
   document.getElementById('system').innerHTML='<div class="row"><span class="k">Free RAM</span><span>'+s.freeRamGB+' GB</span></div><div class="row"><span class="k">Memory entities</span><span>'+s.memoryEntities+'</span></div><div class="row"><span class="k">Harness pin</span><span class="mono">dsh 0.1.0-rc.7</span></div>';
 }catch(e){document.getElementById('stamp').textContent='status fetch failed'}}
 refresh();setInterval(refresh,5000);

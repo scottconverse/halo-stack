@@ -30,6 +30,16 @@ dsh-v0.1.0-rc.7 tree. The claim did **not** fully survive. Verdicts:
    Rule going forward: any credential the model should NOT be able to read goes
    in `.credentials.yaml` via the Settings UI; `.env` is only for keys the model
    is meant to use.
+4b. **Full telemetry** (DONE 2026-08-18, by operator directive — "it's MISSION
+   CONTROL... add them all"): MC now also shows plugin health
+   (`pluginInventory/list` — my earlier "push-stream, not worth it" excuse was
+   wrong on both counts: it's a plain pull, and the value call was the
+   operator's to make, not mine), the agent-preset roster with broken-preset
+   detection (`agentPreset.list`), per-session token/goal/throughput stats
+   (already in `session.list`, previously discarded), and live background jobs
+   via the `events.mux` WebSocket (endpoint discovered by probing: GET answers
+   426 Upgrade Required — it's WS, not SSE).
+
 4. **Mission Control refactor** (DONE, same night): MC now consumes dsh's
    shipped `apiproxy` RPCs (`workspace.list` + `session.list` via
    `POST /api/<method>` with the client-request envelope) when the cockpit is
