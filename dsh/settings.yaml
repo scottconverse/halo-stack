@@ -14,7 +14,9 @@ llm-pi-ai:
         - id: qwen/qwen3.8-27b
           name: Qwen3.8 27B Q5 — daily brain
           contextWindow: 65536
-          maxTokens: 8192
+          # 16384: creator-mode builds write >8K-token replies (design + full
+          # plugin source in one breath); 8192 cut two replies mid-thought
+          maxTokens: 16384
           input: [ text, image ]
           reasoningEfforts:
             low: low
