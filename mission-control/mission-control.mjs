@@ -738,6 +738,12 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 .mgraph-conn-btn:hover{background:#164058}
 .mgraph-obs{margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #1a2c42}
 .mgraph-obs:last-child{border:none}
+.mgraph-tooltip{position:fixed;z-index:80;background:#101c2a;border:1px solid var(--line);color:var(--ink);padding:6px 10px;border-radius:6px;font-size:.78rem;max-width:300px;line-height:1.4;pointer-events:none;display:none;box-shadow:0 6px 18px rgba(0,0,0,.45)}
+.mg-about{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:12px 16px;margin-bottom:12px}
+.mg-about summary{cursor:pointer;font-weight:600;color:#dcecff;font-size:.88rem;list-style:revert}
+.mg-about[open] summary{margin-bottom:8px}
+.mg-about .mg-about-body{color:var(--mut);font-size:.83rem;line-height:1.6}
+.mg-about .mg-about-body .mono{color:var(--teal)}
 </style></head><body>
 <h1>HALO Mission Control</h1><div class="sub">Reads native state every 5 s &middot; holds only trend/cadence state &middot; <span id="stamp"></span></div>
 <div id="strip" class="strip"></div>
@@ -812,10 +818,23 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 </div>
 
 <div id="tab-memory" class="tabpanel">
+<details class="mg-about" id="mg-about" open>
+<summary>About this graph</summary>
+<div class="mg-about-body">
+This is the harness's persistent knowledge graph (<span class="mono">~\.dsh\memory\memory.json</span>): what your local models remember across sessions. Nodes are entities (things the models chose to remember), colored by type. Edges are relations between them. Click a node to read its observations &mdash; the actual remembered facts.
+<br><br>
+It grows when sessions write to it &mdash; say <span class="mono">&quot;remember this:&quot;</span> in the cockpit.
+<br>
+It's snapshotted hourly by the scheduled task <span class="mono">HALO Memory Snapshot</span>.
+</div>
+</details>
 <div class="card" style="padding:12px 14px">
 <div class="filterbar" style="justify-content:space-between">
 <h2 style="margin:0" id="mg-header">Memory Graph &middot; &hellip;</h2>
+<span>
+<button onclick="mgResetView()" title="Frame all nodes back into view">Reset view</button>
 <button onclick="loadMemoryGraphTab()">Refresh</button>
+</span>
 </div>
 <div id="mg-status" class="mut" style="margin:2px 0 10px"></div>
 <div class="mgraph-wrap">
@@ -862,7 +881,7 @@ function onTabShown(name){
   if(name==='sessions') loadSessions();
   if(name==='plugins') loadPlugins();
   if(name==='system'){ loadMemoryGraph(); loadLogtail(); }
-  if(name==='memory') loadMemoryGraphTab();
+  if(name==='memory') mgOnTabActivated();
 }
 document.querySelectorAll('.tabbtn').forEach(function(b){b.addEventListener('click', function(){ location.hash='#'+b.dataset.tab })});
 window.addEventListener('hashchange', function(){ showTab((location.hash||'#overview').slice(1) || 'overview') });
@@ -1194,12 +1213,41 @@ async function loadLogtail(){
 }
 
 // ── memory tab: hand-rolled force-directed knowledge graph (no libs) ──
+// Continuous force simulation (the "Obsidian feel"): a requestAnimationFrame
+// tick loop runs charge repulsion + edge springs + centering gravity every
+// frame, with velocity damping, instead of a one-shot batch of iterations.
+// It free-runs while the graph is unsettled and auto-pauses once kinetic
+// energy drops near zero (see MG_KE_STOP/MG_KE_STOP_FRAMES below) — this is
+// a dashboard, not a game loop, so it must not spin the CPU forever.
+// Dragging a node pins it to the cursor (its own velocity is zeroed, its
+// position set directly) while the simulation keeps running around it, so
+// spring forces visibly pull connected neighbors along and the network
+// re-settles on release.
 var MG_PALETTE=['#4fd8c4','#5fe39a','#ffc86b','#ff8080','#7fa8d9','#c58fe6','#f08fc0','#a8d95f','#5fb8e3','#e3a55f','#8fe3c8','#e35f8f'];
 function mgHashStr(s){ s=String(s||''); var h=0; for(var i=0;i<s.length;i++){ h=((h<<5)-h+s.charCodeAt(i))|0; } return Math.abs(h); }
 function mgColorFor(entityType){ return MG_PALETTE[mgHashStr(entityType)%MG_PALETTE.length]; }
 
+// Physics constants (tuned live on the 5-entity/4-relation HALO graph):
+//   MG_IDEAL_K_CAP  max ideal node spacing, px — capped regardless of canvas
+//                   area so wide monitors don't fling unconnected nodes into
+//                   the walls (uncapped k scales with W*H).
+//   MG_CENTER_K     centering gravity coefficient applied every frame.
+//   MG_DAMPING      velocity multiplier per frame (simple v*=damping decay).
+//   MG_ACCEL        force-to-velocity impulse scale per frame.
+//   MG_MAX_SPEED    per-node speed clamp, px/frame, so a freshly-loaded
+//                   tight cluster can't launch nodes off-canvas in one tick.
+//   MG_KE_STOP      total kinetic energy (sum of vx^2+vy^2) below which the
+//                   graph counts as "settling".
+//   MG_KE_STOP_FRAMES  consecutive low-KE frames required before the rAF
+//                   loop actually pauses (~0.5s at 60fps) — avoids pausing
+//                   on a single transient near-zero moment.
+var MG_IDEAL_K_CAP=170, MG_CENTER_K=0.010, MG_DAMPING=0.86, MG_ACCEL=0.02,
+    MG_MAX_SPEED=36, MG_KE_STOP=0.05, MG_KE_STOP_FRAMES=30, MG_MAX_SIM_FRAMES=3600;
+
 var mg={svg:null,viewport:null,nodes:[],edges:[],byId:{},tx:0,ty:0,k:1,w:800,h:500,selected:null,
-  dragNode:null,moved:false,panning:false,panMoved:false};
+  dragNode:null,moved:false,panning:false,panMoved:false,hoverNode:null,hoverEdge:null,
+  idealK:MG_IDEAL_K_CAP,didInitialFit:false,initialized:false};
+var mgSim={running:false,rafId:null,lowFrames:0,frames:0};
 
 async function loadMemoryGraphTab(){
   var statusEl=document.getElementById('mg-status');
@@ -1223,14 +1271,16 @@ async function loadMemoryGraphTab(){
   var entities=g.entities||[];
   var relations=g.relations||[];
   headerEl.textContent='Memory Graph \\u00b7 '+entities.length+' entities \\u00b7 '+relations.length+' relations';
-  statusEl.textContent=entities.length? '' : 'no entities recorded yet in memory.json';
+  if(!entities.length) statusEl.textContent='no entities recorded yet in memory.json';
+  else if(!relations.length) statusEl.textContent='No relations yet \\u2014 relations appear when sessions link entities together.';
+  else statusEl.textContent='';
 
-  mg.nodes=entities.map(function(e){ return {id:e.name,name:e.name,entityType:e.entityType,observations:e.observations||[],color:mgColorFor(e.entityType),x:0,y:0}; });
+  mg.nodes=entities.map(function(e){ return {id:e.name,name:e.name,entityType:e.entityType,observations:e.observations||[],color:mgColorFor(e.entityType),x:0,y:0,vx:0,vy:0}; });
   mg.byId={}; mg.nodes.forEach(function(n){ mg.byId[n.id]=n });
   // Drop relations pointing at an entity name we don't have (keeps the
   // renderer honest — never invent a node just to satisfy an edge).
   mg.edges=relations.filter(function(r){ return mg.byId[r.from] && mg.byId[r.to]; }).map(function(r){ return {from:r.from,to:r.to,relationType:r.relationType||''}; });
-  mg.selected=null;
+  mg.selected=null; mg.hoverNode=null; mg.hoverEdge=null;
 
   var legendTypes=[]; var seen={};
   mg.nodes.forEach(function(n){ if(!seen[n.entityType]){ seen[n.entityType]=1; legendTypes.push(n.entityType); } });
@@ -1239,65 +1289,156 @@ async function loadMemoryGraphTab(){
   }).join('') : '<div class="mut">no entity types</div>';
 
   initMemoryGraphDom();
-  mgForceLayout(mg.nodes, mg.edges, mg.w, mg.h);
+  mgSeedPositions(mg.nodes, mg.w, mg.h);
   buildMemoryGraphElements();
-  mg.tx=0; mg.ty=0; mg.k=1;
-  applyMgTransform();
+  mg.didInitialFit=false;
+  applyMgTransform(); // identity-ish start; physics settle live, then auto-fit
+  mgApplyHighlight();
+  mgStartSim();
+  mg.initialized=true;
   document.getElementById('mg-detail').innerHTML='<div class="mut">Click a node to see its details.</div>';
+  // Self-correct the sizing trap: if the tab was hidden (clientWidth/Height
+  // 0) when this ran, the canvas fell back to 800x500. A frame later, once
+  // the browser has actually painted the now-active tab, re-measure and
+  // re-fit if the real size differs.
+  requestAnimationFrame(function(){ mgOnTabActivated(); });
 }
 
-// Fruchterman-Reingold-lite: charge repulsion between every pair + spring
-// attraction along edges + weak centering, run for a fixed iteration count
-// then stop. Works with zero edges (pure repulsion spreads nodes out from a
-// deterministic circular seed) and with edges (springs pull related nodes
-// together). Seed jitter uses sin/cos of the index, not Math.random(), so
-// the layout is the same shape on every reload.
-function mgForceLayout(nodes, edges, W, H){
+// Re-entry point every time the Memory tab is shown (nav click or
+// hash-change), NOT just on first load. First activation does the full
+// fetch+build; later activations just re-measure the canvas (it may have
+// been display:none — 0 clientWidth/Height — when the graph was built) and
+// re-fit + nudge the simulation if the size actually changed, instead of
+// re-fetching/rebuilding and losing the live layout and any dragged nodes.
+function mgOnTabActivated(){
+  // Guard against being called before the mg={...} initializer below has
+  // run: the very first tab activation happens synchronously from the
+  // initial showTab() call at the bottom of <script> (hash-based deep link,
+  // e.g. #memory), which fires BEFORE this file's later var statements have
+  // executed. mg is hoisted (still undefined) at that point.
+  if(typeof mg==='undefined' || !mg.initialized){ loadMemoryGraphTab(); return; }
+  var canvas=document.getElementById('mg-canvas');
+  if(!canvas) return;
+  var w=canvas.clientWidth||0, h=canvas.clientHeight||0;
+  if(w<10||h<10) return; // still hidden/not laid out — nothing reliable to measure
+  if(Math.abs(w-mg.w)>4||Math.abs(h-mg.h)>4){
+    mg.w=w; mg.h=h;
+    if(mg.svg) mg.svg.setAttribute('viewBox','0 0 '+w+' '+h);
+    mgFitToView();
+    mgStartSim(); // let it glide to the new center
+  }
+}
+window.addEventListener('resize', function(){ if(currentTab==='memory') mgOnTabActivated(); });
+
+// Frame the laid-out nodes: center their bounding box in the canvas at a
+// scale that fits with padding (never over-zoomed past 1.4x). Called after
+// the simulation's initial settle, after a canvas resize, and by the
+// "Reset view"/Esc/double-click escape hatches below.
+function mgFitToView(){
+  if(!mg.nodes.length){ mg.tx=0; mg.ty=0; mg.k=1; applyMgTransform(); return; }
+  var minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  mg.nodes.forEach(function(n){
+    if(n.x<minX)minX=n.x; if(n.x>maxX)maxX=n.x;
+    if(n.y<minY)minY=n.y; if(n.y>maxY)maxY=n.y;
+  });
+  var pad=110; // room for labels + breathing space
+  var bw=Math.max(maxX-minX,1)+pad*2, bh=Math.max(maxY-minY,1)+pad*2;
+  var scale=Math.min(mg.w/bw, mg.h/bh, 1.4);
+  var cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+  mg.k=scale;
+  mg.tx=mg.w/2-scale*cx;
+  mg.ty=mg.h/2-scale*cy;
+  applyMgTransform();
+}
+
+// Deterministic circular seed (sin/cos of index, not Math.random()) so the
+// starting shape is the same on every reload; the continuous simulation
+// then relaxes it live instead of pre-computing a static layout.
+function mgSeedPositions(nodes, W, H){
   var n=nodes.length;
   if(n===0) return;
-  var idIndex={}; nodes.forEach(function(node,i){ idIndex[node.id]=i; });
-  if(n===1){ nodes[0].x=W/2; nodes[0].y=H/2; return; }
+  if(n===1){ nodes[0].x=W/2; nodes[0].y=H/2; nodes[0].vx=0; nodes[0].vy=0; mg.idealK=MG_IDEAL_K_CAP; return; }
   var seedR=Math.min(W,H)*0.32;
   nodes.forEach(function(node,i){
     var angle=(i/n)*Math.PI*2;
     node.x=W/2+seedR*Math.cos(angle)+Math.sin(i*12.9898)*6;
     node.y=H/2+seedR*Math.sin(angle)+Math.cos(i*78.233)*6;
+    node.vx=0; node.vy=0;
   });
-  var k=Math.sqrt((W*H)/Math.max(n,1));
-  var iterations=300;
-  for(var iter=0; iter<iterations; iter++){
-    for(var i=0;i<n;i++){ nodes[i].fx=0; nodes[i].fy=0; }
-    for(var i=0;i<n;i++){
-      for(var j=i+1;j<n;j++){
-        var a=nodes[i], b=nodes[j];
-        var dx=a.x-b.x, dy=a.y-b.y;
-        var dist=Math.sqrt(dx*dx+dy*dy)||0.01;
-        var force=(k*k)/dist;
-        var fx=(dx/dist)*force, fy=(dy/dist)*force;
-        a.fx+=fx; a.fy+=fy; b.fx-=fx; b.fy-=fy;
-      }
-    }
-    for(var e=0;e<edges.length;e++){
-      var ai=idIndex[edges[e].from], bi=idIndex[edges[e].to];
-      if(ai==null||bi==null) continue;
-      var a=nodes[ai], b=nodes[bi];
+  // Ideal spacing, capped: uncapped it scales with canvas area and on wide
+  // monitors repulsion flings unconnected nodes into the boundary clamps
+  // (observed live: 5 nodes pinned to the corners of a 2000px canvas).
+  mg.idealK=Math.min(Math.sqrt((W*H)/Math.max(n,1)), MG_IDEAL_K_CAP);
+}
+
+function mgStartSim(){
+  mgSim.lowFrames=0; mgSim.frames=0;
+  if(mgSim.running) return;
+  mgSim.running=true;
+  mgSim.rafId=requestAnimationFrame(mgTick);
+}
+
+// One frame of Fruchterman-Reingold-style forces: charge repulsion between
+// every pair (k^2/dist) + spring attraction along edges (dist^2/k, so the
+// two balance exactly at the ideal edge length k) + weak centering gravity,
+// integrated with velocity damping. A dragged node is pinned — its velocity
+// is zeroed and its position comes from the mouse instead — but it still
+// exerts forces on everything else, so neighbors visibly get pulled along.
+function mgTick(){
+  var nodes=mg.nodes, edges=mg.edges, n=nodes.length;
+  mgSim.frames++;
+  if(n===0){ mgSim.running=false; mgSim.rafId=null; return; }
+  var k=mg.idealK||MG_IDEAL_K_CAP;
+  for(var i=0;i<n;i++){ nodes[i].fx=0; nodes[i].fy=0; }
+  for(var i=0;i<n;i++){
+    for(var j=i+1;j<n;j++){
+      var a=nodes[i], b=nodes[j];
       var dx=a.x-b.x, dy=a.y-b.y;
       var dist=Math.sqrt(dx*dx+dy*dy)||0.01;
-      var force=(dist*dist)/k;
+      var force=(k*k)/dist;
       var fx=(dx/dist)*force, fy=(dy/dist)*force;
-      a.fx-=fx; a.fy-=fy; b.fx+=fx; b.fy+=fy;
-    }
-    var temp=Math.max(0.4, k*0.12*(1-iter/iterations));
-    for(var i=0;i<n;i++){
-      var a=nodes[i];
-      a.fx+=(W/2-a.x)*0.008; a.fy+=(H/2-a.y)*0.008;
-      var flen=Math.sqrt(a.fx*a.fx+a.fy*a.fy)||0.01;
-      var cap=Math.min(flen,temp);
-      a.x+=(a.fx/flen)*cap; a.y+=(a.fy/flen)*cap;
-      a.x=Math.max(28,Math.min(W-28,a.x));
-      a.y=Math.max(28,Math.min(H-28,a.y));
+      a.fx+=fx; a.fy+=fy; b.fx-=fx; b.fy-=fy;
     }
   }
+  for(var e=0;e<edges.length;e++){
+    var a=mg.byId[edges[e].from], b=mg.byId[edges[e].to];
+    if(!a||!b) continue;
+    var dx=a.x-b.x, dy=a.y-b.y;
+    var dist=Math.sqrt(dx*dx+dy*dy)||0.01;
+    var force=(dist*dist)/k;
+    var fx=(dx/dist)*force, fy=(dy/dist)*force;
+    a.fx-=fx; a.fy-=fy; b.fx+=fx; b.fy+=fy;
+  }
+  var cx=mg.w/2, cy=mg.h/2;
+  for(var i=0;i<n;i++){
+    var a=nodes[i];
+    a.fx+=(cx-a.x)*MG_CENTER_K; a.fy+=(cy-a.y)*MG_CENTER_K;
+  }
+  var totalKE=0;
+  for(var i=0;i<n;i++){
+    var a=nodes[i];
+    if(a===mg.dragNode){ a.vx=0; a.vy=0; continue; }
+    a.vx=(a.vx+a.fx*MG_ACCEL)*MG_DAMPING;
+    a.vy=(a.vy+a.fy*MG_ACCEL)*MG_DAMPING;
+    var speed=Math.sqrt(a.vx*a.vx+a.vy*a.vy);
+    if(speed>MG_MAX_SPEED){ a.vx=a.vx/speed*MG_MAX_SPEED; a.vy=a.vy/speed*MG_MAX_SPEED; }
+    a.x+=a.vx; a.y+=a.vy;
+    a.x=Math.max(24,Math.min(mg.w-24,a.x));
+    a.y=Math.max(24,Math.min(mg.h-24,a.y));
+    totalKE+=a.vx*a.vx+a.vy*a.vy;
+  }
+  mgUpdatePositions();
+  if(mg.dragNode){ mgSim.lowFrames=0; }
+  else if(totalKE<MG_KE_STOP){ mgSim.lowFrames++; }
+  else { mgSim.lowFrames=0; }
+  var settled=!mg.dragNode && mgSim.lowFrames>MG_KE_STOP_FRAMES;
+  var timedOut=mgSim.frames>MG_MAX_SIM_FRAMES; // safety valve — never spin forever
+  if(settled||timedOut){
+    mgSim.running=false; mgSim.rafId=null;
+    if(!mg.didInitialFit){ mg.didInitialFit=true; mgFitToView(); }
+    return;
+  }
+  mgSim.rafId=requestAnimationFrame(mgTick);
 }
 
 var MG_NS='http://www.w3.org/2000/svg';
@@ -1336,19 +1477,31 @@ function buildMemoryGraphElements(){
     var line=document.createElementNS(MG_NS,'line');
     line.setAttribute('stroke','#3c6284'); line.setAttribute('stroke-width','1.4');
     line.setAttribute('marker-end','url(#mg-arrow)');
+    line.style.transition='stroke .12s,stroke-width .12s,opacity .12s';
     edgesGroup.appendChild(line);
     e.el=line;
+    // Wider invisible hit-line layered on top so a thin 1.4px edge is still
+    // easy to hover — the visible line stays thin and legible.
+    var hit=document.createElementNS(MG_NS,'line');
+    hit.setAttribute('stroke','transparent'); hit.setAttribute('stroke-width','12');
+    hit.style.cursor='pointer'; hit.style.pointerEvents='stroke';
+    edgesGroup.appendChild(hit);
+    e.hitEl=hit;
     var label=document.createElementNS(MG_NS,'text');
     label.setAttribute('font-size','9'); label.setAttribute('fill','#9fb3c8'); label.setAttribute('text-anchor','middle');
     label.style.opacity='0'; label.style.pointerEvents='none'; label.style.transition='opacity .12s';
     label.textContent=e.relationType||'';
     edgeLabelsGroup.appendChild(label);
     e.labelEl=label;
+    hit.addEventListener('mouseenter', function(ev){ mg.hoverEdge=e; mg.hoverNode=null; mgApplyHighlight(); mgShowTooltip(mgEdgeTooltipText(e),ev); });
+    hit.addEventListener('mousemove', function(ev){ if(mg.hoverEdge===e) mgMoveTooltip(ev); });
+    hit.addEventListener('mouseleave', function(){ if(mg.hoverEdge===e){ mg.hoverEdge=null; mgApplyHighlight(); mgHideTooltip(); } });
   });
 
   mg.nodes.forEach(function(node){
     var grp=document.createElementNS(MG_NS,'g');
     grp.style.cursor='pointer';
+    grp.style.transition='opacity .12s';
     var circle=document.createElementNS(MG_NS,'circle');
     circle.setAttribute('r','15'); circle.setAttribute('fill',node.color);
     circle.setAttribute('stroke','#0b0f14'); circle.setAttribute('stroke-width','2');
@@ -1359,8 +1512,9 @@ function buildMemoryGraphElements(){
     nodesGroup.appendChild(grp);
     node.el=grp; node.circleEl=circle;
     grp.addEventListener('mousedown', function(ev){ mgStartNodeDrag(ev,node); });
-    grp.addEventListener('mouseenter', function(){ mgShowEdgeLabels(node.id,true); });
-    grp.addEventListener('mouseleave', function(){ mgShowEdgeLabels(node.id,false); });
+    grp.addEventListener('mouseenter', function(ev){ mg.hoverNode=node; mg.hoverEdge=null; mgApplyHighlight(); mgShowTooltip(mgNodeTooltipText(node),ev); });
+    grp.addEventListener('mousemove', function(ev){ if(mg.hoverNode===node) mgMoveTooltip(ev); });
+    grp.addEventListener('mouseleave', function(){ if(mg.hoverNode===node){ mg.hoverNode=null; mgApplyHighlight(); mgHideTooltip(); } });
   });
   mgUpdatePositions();
 }
@@ -1378,13 +1532,44 @@ function mgUpdatePositions(){
     var x2=b.x-(dx/dist)*(r+3), y2=b.y-(dy/dist)*(r+3);
     e.el.setAttribute('x1',x1.toFixed(1)); e.el.setAttribute('y1',y1.toFixed(1));
     e.el.setAttribute('x2',x2.toFixed(1)); e.el.setAttribute('y2',y2.toFixed(1));
+    if(e.hitEl){ e.hitEl.setAttribute('x1',x1.toFixed(1)); e.hitEl.setAttribute('y1',y1.toFixed(1)); e.hitEl.setAttribute('x2',x2.toFixed(1)); e.hitEl.setAttribute('y2',y2.toFixed(1)); }
     e.labelEl.setAttribute('x',((a.x+b.x)/2).toFixed(1));
     e.labelEl.setAttribute('y',((a.y+b.y)/2-4).toFixed(1));
   });
 }
-function mgShowEdgeLabels(nodeId,show){
-  mg.edges.forEach(function(e){ if(e.from===nodeId||e.to===nodeId) e.labelEl.style.opacity=show?'1':'0'; });
+
+// Zoomed-out edge labels get cluttered/illegible — hide them below this
+// scale unless a hover is actively highlighting that specific edge.
+function mgEdgeLabelBaseOpacity(){ return mg.k<0.55?'0':'0.85'; }
+
+// Hover state -> visual highlight: the hovered node/edge (and, for a node,
+// its directly-connected neighbors and edges) stay at full opacity; the
+// rest of the graph dims so the relevant subgraph pops. No hover = no dim.
+function mgApplyHighlight(){
+  var activeNodeIds=null, activeEdges=null;
+  if(mg.hoverNode){
+    activeNodeIds={}; activeNodeIds[mg.hoverNode.id]=true;
+    activeEdges=[];
+    mg.edges.forEach(function(e){
+      if(e.from===mg.hoverNode.id||e.to===mg.hoverNode.id){
+        activeEdges.push(e); activeNodeIds[e.from]=true; activeNodeIds[e.to]=true;
+      }
+    });
+  } else if(mg.hoverEdge){
+    activeEdges=[mg.hoverEdge];
+    activeNodeIds={}; activeNodeIds[mg.hoverEdge.from]=true; activeNodeIds[mg.hoverEdge.to]=true;
+  }
+  var dimActive=!!activeNodeIds;
+  mg.nodes.forEach(function(n){ n.el.style.opacity=(dimActive&&!activeNodeIds[n.id])?'0.28':'1'; });
+  mg.edges.forEach(function(e){
+    var isActive=activeEdges&&activeEdges.indexOf(e)>=0;
+    e.el.style.opacity=(dimActive&&!isActive)?'0.15':'1';
+    e.el.setAttribute('stroke-width', isActive?'2.6':'1.4');
+    e.el.setAttribute('stroke', isActive?'#7fc7ff':'#3c6284');
+    e.labelEl.style.opacity= isActive?'1':(dimActive?'0':mgEdgeLabelBaseOpacity());
+  });
 }
+
 function applyMgTransform(){
   mg.viewport.setAttribute('transform','translate('+mg.tx+','+mg.ty+') scale('+mg.k+')');
 }
@@ -1395,6 +1580,25 @@ function mgClientToWorld(clientX,clientY){
   return {vx:vx,vy:vy,wx:(vx-mg.tx)/mg.k,wy:(vy-mg.ty)/mg.k,sx:sx,sy:sy};
 }
 
+// ── tooltip: reused for both node and edge hover ──
+function mgTooltipEl(){
+  var t=document.getElementById('mg-tooltip');
+  if(!t){ t=document.createElement('div'); t.id='mg-tooltip'; t.className='mgraph-tooltip'; document.body.appendChild(t); }
+  return t;
+}
+function mgShowTooltip(text,ev){ var t=mgTooltipEl(); t.textContent=text; t.style.display='block'; mgMoveTooltip(ev); }
+function mgMoveTooltip(ev){ var t=mgTooltipEl(); t.style.left=(ev.clientX+14)+'px'; t.style.top=(ev.clientY+14)+'px'; }
+function mgHideTooltip(){ var t=document.getElementById('mg-tooltip'); if(t) t.style.display='none'; }
+function mgSnippet(s,n){ s=String(s||''); if(s.length<=n) return s; return s.slice(0,n).replace(/\\s+\\S*$/,'')+'\\u2026'; }
+function mgNodeTooltipText(node){
+  var first=(node.observations&&node.observations.length)?node.observations[0]:null;
+  return node.name+(first?' \\u2014 '+mgSnippet(first,100):' (no observations)');
+}
+function mgEdgeTooltipText(e){
+  var a=mg.byId[e.from], b=mg.byId[e.to];
+  return (a?a.name:e.from)+' \\u2192 '+(e.relationType||'related')+' \\u2192 '+(b?b.name:e.to);
+}
+
 function wireMemoryGraphEvents(){
   mg.svg.addEventListener('wheel', function(ev){
     ev.preventDefault();
@@ -1403,16 +1607,25 @@ function wireMemoryGraphEvents(){
     var newK=Math.max(0.2,Math.min(4,mg.k*factor));
     mg.tx=p.vx-p.wx*newK; mg.ty=p.vy-p.wy*newK; mg.k=newK;
     applyMgTransform();
+    mgApplyHighlight(); // label visibility depends on zoom level
   }, {passive:false});
   mg.svg.addEventListener('mousedown', function(ev){
     if(ev.target!==mg.svg && ev.target!==mg.viewport) return;
     mgStartPan(ev);
+  });
+  // Escape hatch: double-click on empty background = fit-to-view (frames
+  // every node back into the visible canvas, same as the Reset view button).
+  mg.svg.addEventListener('dblclick', function(ev){
+    if(ev.target!==mg.svg && ev.target!==mg.viewport) return;
+    mgResetView();
   });
 }
 
 function mgStartNodeDrag(ev,node){
   ev.stopPropagation(); ev.preventDefault();
   mg.dragNode=node; mg.moved=false;
+  mgHideTooltip();
+  mgStartSim(); // guarantee the loop is running so neighbors react live
   var start=mgClientToWorld(ev.clientX,ev.clientY);
   mg.dragOrigWX=start.wx; mg.dragOrigWY=start.wy;
   mg.dragNodeStartX=node.x; mg.dragNodeStartY=node.y;
@@ -1431,7 +1644,12 @@ function mgOnNodeDragEnd(){
   document.removeEventListener('mousemove', mgOnNodeDragMove);
   document.removeEventListener('mouseup', mgOnNodeDragEnd);
   var node=mg.dragNode; mg.dragNode=null;
-  if(node && !mg.moved) selectMemoryNode(node.id);
+  if(node && !mg.moved){
+    // Toggle: clicking the already-selected node deselects it instead of
+    // re-selecting/re-centering onto itself (escape hatch #5).
+    if(mg.selected===node.id) deselectMemoryNode();
+    else selectMemoryNode(node.id);
+  }
   mg.moved=false;
 }
 function mgStartPan(ev){
@@ -1456,7 +1674,25 @@ function mgOnPanEnd(){
   if(mg.svg) mg.svg.style.cursor='grab';
   document.removeEventListener('mousemove', mgOnPanMove);
   document.removeEventListener('mouseup', mgOnPanEnd);
+  // Escape hatch: a plain click (no drag) on empty background deselects
+  // the current node and un-dims everything, WITHOUT recentering the view
+  // — distinct from double-click/Esc/Reset view, which do recenter.
+  if(!mg.panMoved) deselectMemoryNode();
+  mg.panMoved=false;
 }
+
+// Escape hatch: Reset view button, double-click background, and Esc all
+// route here — deselect (clears the zoom-to-node the detail click applied)
+// then fit-to-view (frames every node back into the visible canvas). This
+// is the one obvious, zero-knowledge way back after any navigation the
+// graph performs (selecting a node or clicking a connection both recenter).
+function mgResetView(){
+  deselectMemoryNode();
+  mgFitToView();
+}
+document.addEventListener('keydown', function(ev){
+  if(ev.key==='Escape' && currentTab==='memory') mgResetView();
+});
 
 function selectMemoryNode(id){
   var node=mg.byId[id]; if(!node) return;
@@ -1479,16 +1715,19 @@ function renderMemoryDetail(id){
   var panel=document.getElementById('mg-detail');
   if(!node){ panel.innerHTML='<div class="mut">Click a node to see its details.</div>'; return; }
   mgDetailConns=mg.edges.filter(function(e){ return e.from===id||e.to===id; });
+  // Sentence-shaped: "<verb> \\u2192 <other entity>", e.g. "uses \\u2192
+  // halo-search-infrastructure". A small leading glyph marks direction
+  // (\\u25b8 outgoing / \\u25c2 incoming) without breaking that reading flow.
   var connHtml=mgDetailConns.length?mgDetailConns.map(function(e,i){
     var otherId=e.from===id?e.to:e.from;
     var other=mg.byId[otherId];
-    var arrow=e.from===id?'\\u2192':'\\u2190';
-    return '<button class="mgraph-conn-btn" onclick="selectMemoryConn('+i+')">'+arrow+' '+esc(e.relationType||'related')+' '+arrow+'&nbsp;&nbsp;<b>'+esc(other?other.name:otherId)+'</b></button>';
+    var glyph=e.from===id?'\\u25b8':'\\u25c2';
+    return '<button class="mgraph-conn-btn" onclick="selectMemoryConn('+i+')">'+glyph+' '+esc(e.relationType||'related')+' \\u2192 <b>'+esc(other?other.name:otherId)+'</b></button>';
   }).join(''):'<div class="mut">No relations recorded.</div>';
   panel.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px">'+
       '<h3 style="margin:0 0 6px;font-size:1rem">'+esc(node.name)+'</h3>'+
-      '<button onclick="deselectMemoryNode()" style="padding:2px 8px">&times;</button>'+
+      '<button onclick="deselectMemoryNode()" style="padding:2px 8px" title="Deselect (does not recenter)">&times;</button>'+
     '</div>'+
     '<div class="badge" style="background:'+node.color+'2a;color:'+node.color+';margin:0 0 10px">'+esc(node.entityType)+'</div>'+
     '<div class="mut" style="margin:8px 0 4px;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Observations ('+node.observations.length+')</div>'+
@@ -1501,7 +1740,8 @@ function renderMemoryDetail(id){
 function deselectMemoryNode(){
   mg.selected=null;
   mg.nodes.forEach(function(n){ n.circleEl.setAttribute('stroke','#0b0f14'); n.circleEl.setAttribute('stroke-width','2'); });
-  document.getElementById('mg-detail').innerHTML='<div class="mut">Click a node to see its details.</div>';
+  var panel=document.getElementById('mg-detail');
+  if(panel) panel.innerHTML='<div class="mut">Click a node to see its details.</div>';
 }
 function selectMemoryConn(i){
   var e=mgDetailConns[i]; if(!e) return;

@@ -17,6 +17,11 @@ last scan date and prior headline findings. If it does not exist, this is the
 baseline run: report everything currently notable, then create the entity.
 At the END of the run, update `halo-monitor-state` with today's date and a
 one-line summary per layer. One entity only — update observations, don't duplicate.
+Make the FIRST observation a plain-English two-liner for the human operator
+(no jargon, no issue numbers): "Scan <date>: <what changed or 'nothing
+actionable'>; <what's being watched>." — it's the first thing shown when the
+entity is clicked in the Mission Control memory graph. The machine-shorthand
+observations follow after it.
 
 ## Stack context (baseline — do not re-derive)
 - Machine: Windows 11, AMD Strix Halo ("HALO"), ~256 GB/s memory bandwidth,
