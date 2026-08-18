@@ -8,3 +8,38 @@
       name: '@deepseek-ai/dsh-agent-tool-presentation'
       config:
         mode: code
+
+# --- Memory isolation for bench runs -----------------------------------
+# Mechanism: env-override fallback, NOT Cordis `isolate`.
+#
+# Cordis's `isolate` entry field (EntryOptions.isolate, a coeffect-key -> realm
+# map) IS present and wired in dsh 0.1.0-rc.7 — confirmed in
+# node_modules/@deepseek-ai/cordis-plugin-loader/src/config/isolate.ts
+# (compiled into lib/index.js, `ctx.plugin(isolate)` installed by every
+# Loader instance). But it isolates *injected service resolution* (a symbol
+# per coeffect name per realm) — it has nothing to bind to here: the
+# mcp-memory row's plugin (@deepseek-ai/dsh-mcp-client) injects only the
+# shared `tools` service (`const inject = ["tools"]`,
+# node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js:720) and provides no
+# named coeffect of its own that other entries could inject into a different
+# realm. The actual state boundary — which file the spawned memory-server
+# subprocess writes to — is a plain `env.MEMORY_FILE_PATH` value forwarded
+# straight to `StdioClientTransport` (same file, `buildChildEnv(config.env)`
+# at the spawn call, line ~44), entirely outside Cordis's realm/symbol
+# machinery. So `isolate` would be syntactically legal on this row but a
+# no-op for isolating memory data.
+#
+# Fallback instead: replace the mcp-memory row wholesale (patch rows replace
+# `config` as a unit, not a deep merge — same shape/id/name as the live row
+# in C:\Users\scott\.dsh\cordis.patch.yml) and point MEMORY_FILE_PATH at a
+# bench-only scratch graph. Production's C:\Users\scott\.dsh\memory\memory.json
+# is never opened by bench runs using this overlay.
+- id: mcp-memory
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: memory
+    transport: stdio
+    command: npx
+    args: ['-y', '@modelcontextprotocol/server-memory']
+    env:
+      MEMORY_FILE_PATH: 'C:\Users\scott\.dsh\memory\bench-scratch-memory.json'

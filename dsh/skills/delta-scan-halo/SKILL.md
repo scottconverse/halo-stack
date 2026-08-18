@@ -81,6 +81,16 @@ reddit.com content — a licensing hole — and Jina's reader is blocked by Redd
   adoresever/graph-memory, volcengine/OpenViking. ANY candidate requires the
   full telemetry/exfiltration audit before install — memory plugins read
   everything the agents know.
+  Architecture bar (added 2026-08-18, from the Cordis paper — the formal
+  model under dsh): PREFER candidates that load as Cordis components
+  (dsh-native plugins) over external MCP processes. In-paradigm plugins get
+  guaranteed-clean removal (revertible effects — unloading provably leaves
+  no trace) and runtime capability attenuation via coeffect interception
+  (e.g. read-only access without modifying the plugin). External MCP
+  processes sit OUTSIDE the composability boundary: dsh cannot revert
+  anything they do, and a native crash can take the whole boot down
+  (the BrowserMCP incident is the precedent). External candidates therefore
+  carry a strictly heavier audit burden than plugin candidates.
 - Nemotron worker gate (benched 2026-08-17: DNS — LM Studio v2.28.2 engine
   predates nemotron_h_moe, bare llama.cpp b10472 loads it fine): when an
   LM Studio engine update ships, test-load

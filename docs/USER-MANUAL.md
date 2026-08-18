@@ -202,9 +202,30 @@ Full bug list with root causes: README §Known issues and `docs/phases/phase3-re
   [`HALO-Stack-Monitor-Prompt.md`](HALO-Stack-Monitor-Prompt.md) as the
   reference source. Originally written by the stack's own model.
 
+- **Config changes apply LIVE — no restart.** Proven 2026-08-18: the harness
+  watches `~\.dsh\cordis.patch.yml` (and `settings.yaml`) and reconciles
+  plugins in place within ~20 seconds of a save, both directions — enabling a
+  row activates it, disabling one withdraws its effects cleanly, and running
+  sessions are untouched. Edit → watch Mission Control's plugin card flip →
+  done. (This is the Cordis kernel's config reconciliation; see
+  [`AUDIT-cordis-concepts-2026-08-18.md`](AUDIT-cordis-concepts-2026-08-18.md).)
+  The flip side: a *bad* edit also propagates in ~20 seconds — which is why
+  deploys are transactional (below). Restarts are now only for harness
+  upgrades and the >1 MB-session deadlock workaround.
 - **After any live config change** (settings.yaml, patch, preset, launcher, loader):
   run `scripts\Sync-FromLive.ps1`, review `git diff`, commit with the reason. That's the
   whole discipline — it keeps every tuning decision diffable.
+- **Deploying config TO the machine** (`scripts\Deploy-ToLive.ps1`) is
+  transactional: staged files are YAML-validated first, live files are backed
+  up to `~\.dsh\ConfigBackups\deploy-<stamp>\`, and a failed post-apply
+  `--dump-config` gate rolls everything back automatically. A deploy can be
+  wrong, but it can't stay broken.
+- **Memory-graph snapshots:** the knowledge graph (`~\.dsh\memory\memory.json`)
+  is the one thing the harness *cannot* revert — a bad write by a session or
+  plugin is permanent. Compensation: the scheduled task **HALO Memory
+  Snapshot** takes hourly change-detected snapshots into
+  `~\.dsh\memory\snapshots\` (rotation: last 60). Restoring = copy a snapshot
+  back over `memory.json`.
 - **Backups:** point-in-time snapshots live in
   `Documents\Codex\ConfigBackups\` (pin record, config dumps, phase results, `.dsh` home).
 - **Upgrading the harness:** deliberate act, never casual. Change the pin

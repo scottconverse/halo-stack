@@ -141,10 +141,91 @@ async function dshRpc(method, payload = {}) {
   return msg.result.value;
 }
 
+// ── Cordis fiber lifecycle classification ──────────────────────────────
+// Each plugin config row is a fiber with states INACTIVE/LOADING/ACTIVE/
+// UNLOADING/FAILED (inventory exposes it as fiberPhase, lower/mixed-case in
+// the wild). We bucket every entry into exactly one of five UI buckets:
+//   active        enabled && phase==='active'
+//   disabled      !enabled
+//   waiting       enabled, phase is inactive/null/unrecognized — BENIGN,
+//                 will self-activate once its declared dependency appears
+//   transitioning enabled, phase is loading/reloading/unloading — normal
+//                 for a few seconds; only an alarm if STUCK (see below)
+//   failed        enabled, phase is failed/error — TERMINAL, the calculus
+//                 never auto-retries until config is touched. Always actionable.
+function classifyPluginPhase(enabled, fiberPhaseRaw) {
+  if (!enabled) return 'disabled';
+  const phase = String(fiberPhaseRaw || '').toLowerCase();
+  if (phase === 'active') return 'active';
+  if (phase === 'loading' || phase === 'reloading' || phase === 'unloading') return 'transitioning';
+  if (phase === 'failed' || phase === 'error') return 'failed';
+  return 'waiting'; // '', 'inactive', null/undefined on an enabled row
+}
+
+function fmtDurationMs(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.round(m / 60)}h`;
+}
+
+// Server-side stickiness tracker for transitioning fibers. A LOADING/
+// UNLOADING/RELOADING phase is normal for seconds; one that sits on the
+// exact same phase-string for >60s is a diagnosable stall (a stuck
+// UNLOADING specifically means the withdrawal guard is waiting on
+// dependents) — flag it as stuck, but don't page on ordinary transitions.
+const STUCK_MS = 60000;
+const transitionTracker = new Map(); // entryId -> { phase, sinceMs }
+function trackTransition(entryId, bucket, phaseLower) {
+  const now = Date.now();
+  if (bucket !== 'transitioning') {
+    transitionTracker.delete(entryId);
+    return { stuck: false, sinceMs: null };
+  }
+  const rec = transitionTracker.get(entryId);
+  if (!rec || rec.phase !== phaseLower) {
+    transitionTracker.set(entryId, { phase: phaseLower, sinceMs: now });
+    return { stuck: false, sinceMs: now };
+  }
+  return { stuck: (now - rec.sinceMs) > STUCK_MS, sinceMs: rec.sinceMs };
+}
+
+// Classifies every entry, updates transition stickiness, and returns both a
+// per-entryId lookup (for the /api/plugins table) and a summary object (for
+// the status strip + plugins tab header).
+function classifyPluginEntries(entries) {
+  const byId = new Map();
+  const counts = { active: 0, disabled: 0, waiting: 0, transitioning: 0, failed: 0, stuck: 0 };
+  const failedIds = [], waitingIds = [], stuckList = [];
+  for (const e of entries) {
+    const phaseLower = String(e.fiberPhase || '').toLowerCase();
+    const bucket = classifyPluginPhase(e.enabled, e.fiberPhase);
+    const { stuck, sinceMs } = trackTransition(e.entryId, bucket, phaseLower);
+    counts[bucket]++;
+    if (stuck) {
+      counts.stuck++;
+      stuckList.push(`${e.entryId} stuck ${phaseLower.toUpperCase()} ${fmtDurationMs(Date.now() - sinceMs)}${phaseLower === 'unloading' ? ' — withdrawal guard waiting on dependents' : ''}`);
+    }
+    if (bucket === 'failed') failedIds.push(e.entryId);
+    if (bucket === 'waiting') waitingIds.push(e.entryId);
+    byId.set(e.entryId, { bucket, stuck, sinceMs, phaseLower });
+  }
+  return {
+    byId,
+    summary: {
+      total: entries.length, ...counts,
+      failedList: failedIds.slice(0, 12),
+      waitingList: waitingIds.slice(0, 12),
+      stuckList: stuckList.slice(0, 12),
+    },
+  };
+}
+
 // Slow-changing pulls, cached ~30 s: presets + full plugin inventory. Both the
 // summary strip and the /api/plugins tab endpoint read off this same cache so
 // switching tabs doesn't double-hit the cockpit.
-const slowCache = { at: 0, presets: null, pluginEntries: null, pluginSummary: null };
+const slowCache = { at: 0, presets: null, pluginEntries: null, pluginSummary: null, pluginById: null };
 async function slowPulls() {
   if (Date.now() - slowCache.at < 30000 && slowCache.pluginEntries) return slowCache;
   try {
@@ -152,13 +233,9 @@ async function slowPulls() {
     slowCache.presets = (pr.presets || []).map(p => ({ id: p.id, trust: p.trust, isDefault: !!p.isDefault, broken: p.broken || null, name: p.name || p.id }));
     const entries = pi.entries || [];
     slowCache.pluginEntries = entries;
-    const active = entries.filter(e => e.enabled && e.fiberPhase === 'active');
-    const disabled = entries.filter(e => !e.enabled);
-    const abnormal = entries.filter(e => e.enabled && e.fiberPhase !== 'active');
-    slowCache.pluginSummary = {
-      total: entries.length, active: active.length, disabled: disabled.length, abnormal: abnormal.length,
-      abnormalList: abnormal.map(e => `${e.entryId} (${e.fiberPhase ?? 'no phase'})`).slice(0, 12),
-    };
+    const { byId, summary } = classifyPluginEntries(entries);
+    slowCache.pluginById = byId;
+    slowCache.pluginSummary = summary;
     slowCache.at = Date.now();
   } catch { /* keep last good cache; dsh may be down */ }
   return slowCache;
@@ -611,7 +688,7 @@ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.82rem;margin
 .row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #1a2c42;font-size:.87rem}
 .row:last-child{border:none}.k{color:var(--mut);text-align:right}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;flex:none}
-.up{background:var(--green)}.down{background:var(--red)}.busy{background:var(--amber)}
+.up{background:var(--green)}.down{background:var(--red)}.busy{background:var(--amber)}.wait{background:#5f8fd9}
 button{background:#12344c;color:#cfe8ff;border:1px solid #3c6284;border-radius:8px;padding:6px 11px;margin:3px 6px 0 0;cursor:pointer;font-size:.82rem}
 button:hover{background:#164058}button:disabled{opacity:.5;cursor:default}a{color:var(--teal);text-decoration:none}a:hover{text-decoration:underline}
 .mut{color:var(--mut);font-size:.8rem}.mono{font-family:Consolas,monospace;font-size:.82rem}
@@ -791,11 +868,17 @@ function showLoadRow(i){
 // ── master status strip ──
 function computeLights(s){
   var lights={};
-  // HARNESS
+  // HARNESS — failed fibers are always actionable (red); a stuck transition
+  // (>60s on the same LOADING/UNLOADING/RELOADING phase) is also an alarm
+  // (amber). Plain "waiting" (no dependency yet) and ordinary in-flight
+  // transitions are BENIGN and never trip this light.
   if(!s.services.cockpit) lights.HARNESS={level:'r',cause:'cockpit :3080 is down'};
-  else if((s.plugins&&s.plugins.abnormal>0)||(s.presets&&s.presets.some(function(p){return p.broken}))) {
-    var cause=(s.plugins&&s.plugins.abnormal>0)?(s.plugins.abnormal+' plugin row(s) abnormal'):'a preset is broken';
-    lights.HARNESS={level:'a',cause:cause};
+  else if(s.plugins&&s.plugins.failed>0) {
+    lights.HARNESS={level:'r',cause:s.plugins.failed+' plugin(s) failed: '+(s.plugins.failedList||[]).join(', ')};
+  } else if(s.plugins&&s.plugins.stuck>0) {
+    lights.HARNESS={level:'a',cause:(s.plugins.stuckList||[]).join('; ')};
+  } else if(s.presets&&s.presets.some(function(p){return p.broken})) {
+    lights.HARNESS={level:'a',cause:'a preset is broken'};
   } else lights.HARNESS={level:'g',cause:null};
   // MODELS
   if(!s.services.lmsCli) lights.MODELS={level:'r',cause:'lms CLI failed'};
@@ -985,13 +1068,31 @@ function renderPlugins(){
     if(!filter) return true;
     return (e.entryId||'').toLowerCase().indexOf(filter)>=0 || (e.moduleName||'').toLowerCase().indexOf(filter)>=0 || (e.fiberPhase||'').toLowerCase().indexOf(filter)>=0 || (e.description||'').toLowerCase().indexOf(filter)>=0;
   });
-  document.getElementById('plugins-summary').textContent=pluginsData.summary.active+' active \\u00b7 '+pluginsData.summary.disabled+' disabled \\u00b7 '+pluginsData.summary.abnormal+' abnormal \\u00b7 '+pluginsData.summary.total+' total';
+  var sm=pluginsData.summary;
+  var sumParts=[sm.active+' active', sm.disabled+' disabled'];
+  if(sm.waiting>0) sumParts.push(sm.waiting+' waiting');
+  if(sm.transitioning>0) sumParts.push(sm.transitioning+' transitioning');
+  if(sm.failed>0) sumParts.push(sm.failed+' failed');
+  if(sm.stuck>0) sumParts.push(sm.stuck+' stuck');
+  sumParts.push(sm.total+' total');
+  document.getElementById('plugins-summary').textContent=sumParts.join(' \\u00b7 ');
   var html=rows.map(function(e){
-    var state=e.abnormal?'<span class="dot down"></span>abnormal':(e.enabled?'<span class="dot up"></span>active':'<span class="dot"></span>disabled');
-    var stateColor=e.abnormal?' style="color:var(--red)"':(!e.enabled?' style="color:var(--mut)"':'');
-    return '<tr>'+
+    var state, stateColor='', tip='';
+    if(e.bucket==='failed'){ state='<span class="dot down"></span>failed'; stateColor=' style="color:var(--red)"'; }
+    else if(e.bucket==='transitioning'){
+      state='<span class="dot busy"></span>'+(e.stuck?'stuck '+esc((e.fiberPhase||'').toUpperCase()):esc(e.fiberPhase||'transitioning'));
+      stateColor=' style="color:var(--amber)"';
+    }
+    else if(e.bucket==='waiting'){
+      state='<span class="dot wait"></span>waiting';
+      stateColor=' style="color:#7fa8d9"';
+      tip=' title="waiting on dependency \\u2014 will self-activate"';
+    }
+    else if(e.bucket==='active'){ state='<span class="dot up"></span>active'; }
+    else { state='<span class="dot"></span>disabled'; stateColor=' style="color:var(--mut)"'; }
+    return '<tr'+tip+'>'+
       '<td class="mono">'+esc(e.entryId)+(e.haloOverride?' <span class="badge badge-teal">HALO override</span>':'')+'</td>'+
-      '<td'+stateColor+'>'+state+'</td>'+
+      '<td'+stateColor+'>'+state+(e.bucket==='waiting'?' <span class="mut">(waiting on dependency &mdash; will self-activate)</span>':'')+'</td>'+
       '<td>'+esc(e.fiberPhase||'—')+'</td>'+
       '<td class="mono mut">'+esc(e.moduleName||'—')+'</td>'+
       '<td class="mut" style="max-width:360px;white-space:normal">'+esc(e.description||'—')+'</td>'+
@@ -1104,18 +1205,29 @@ const server = http.createServer(async (req, res) => {
       const rawEntries = slow.pluginEntries || [];
       const moduleCounts = new Map();
       for (const e of rawEntries) moduleCounts.set(e.moduleName, (moduleCounts.get(e.moduleName) || 0) + 1);
+      // Sort: failed (red) first, then stuck-transitioning, then ordinary
+      // transitioning (both amber), then waiting (dimmed — benign), then
+      // active, then disabled.
+      const bucketRank = (b, stuck) => {
+        if (b === 'failed') return 0;
+        if (b === 'transitioning') return stuck ? 1 : 2;
+        if (b === 'waiting') return 3;
+        if (b === 'active') return 4;
+        return 5; // disabled
+      };
       const entries = rawEntries.map(e => {
         let description = resolveModuleDescription(e.moduleName);
         if (description && (moduleCounts.get(e.moduleName) || 0) > 1) {
           description += ` · instance: ${entryInstanceSuffix(e.entryId)}`;
         }
+        const cls = slow.pluginById?.get(e.entryId) || { bucket: classifyPluginPhase(e.enabled, e.fiberPhase), stuck: false };
         return {
           entryId: e.entryId, moduleName: e.moduleName, enabled: e.enabled, fiberPhase: e.fiberPhase,
-          abnormal: e.enabled && e.fiberPhase !== 'active',
+          bucket: cls.bucket, stuck: !!cls.stuck,
           haloOverride: overrides.has(e.entryId),
           description: description || '—',
         };
-      }).sort((a, b) => (b.abnormal - a.abnormal) || (b.enabled - a.enabled) || a.entryId.localeCompare(b.entryId));
+      }).sort((a, b) => bucketRank(a.bucket, a.stuck) - bucketRank(b.bucket, b.stuck) || a.entryId.localeCompare(b.entryId));
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: false, entries, summary: slow.pluginSummary }));
       return;

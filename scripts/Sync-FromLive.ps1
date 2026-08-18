@@ -16,6 +16,8 @@ $map = @(
     @{ src = "$U\.dsh\bench-overlay-trio.yml";       dst = "dsh\overlays\bench-overlay-trio.yml" }
     @{ src = "$U\.dsh\.agent-presets\halo-standard\agent.cordis.yml"; dst = "dsh\agent-presets\halo-standard\agent.cordis.yml" }
     @{ src = "$U\.dsh\.agent-presets\halo-standard\preset.yml";       dst = "dsh\agent-presets\halo-standard\preset.yml" }
+    # Memory-graph snapshot compensation (hourly scheduled task "HALO Memory Snapshot")
+    @{ src = "$U\.dsh\memory\Snapshot-Memory.ps1";      dst = "dsh\memory\Snapshot-Memory.ps1" }
     # Harness skills
     @{ src = "$U\.dsh\skills\delta-scan-halo\SKILL.md"; dst = "dsh\skills\delta-scan-halo\SKILL.md" }
     # Shared-root skills (~\.agents\skills — visible to Claude Code AND the harness)

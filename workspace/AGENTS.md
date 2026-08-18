@@ -23,6 +23,12 @@ anything about this machine.
 - **Speed shape:** your first turn in a session pre-reads ~10K tokens (slow);
   later turns ride the prefix cache. Long sessions decode slower — that's
   Vulkan at depth, not a fault.
+- **Config is live:** the harness hot-reconciles `~\.dsh\cordis.patch.yml`
+  and `settings.yaml` within ~20 s of a save — never restart the server for
+  a config change, and treat config edits as immediately production-affecting.
+  The memory graph is snapshotted hourly to `~\.dsh\memory\snapshots\`
+  (scheduled task "HALO Memory Snapshot") — a bad memory write is recoverable;
+  tell the operator before restoring.
 
 ## Conduct
 - Verify on disk before claiming success; measured beats derived; cite URLs
