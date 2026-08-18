@@ -3,7 +3,7 @@
 The complete, reproducible configuration of the HALO local AI stack:
 **DeepSeek Harness (`dsh` pinned `0.1.0-rc.7`) + LM Studio (Qwen3.8-27B Q5 brain,
 Qwen3 Coder 30B MoE on-demand worker) + Mission Control + OpenCode config**,
-as designed, benched, and hardened on 2026-08-17.
+as designed, benchmarked, and documented on 2026-08-17.
 
 **Landing page:** https://scottconverse.github.io/halo-stack/ · **Build log** (full design + measured results): https://quartz-entry-ptf2.here.now/ · **[User manual](docs/USER-MANUAL.md)** · mirror: https://brave-willow-zrcc.here.now/
 
