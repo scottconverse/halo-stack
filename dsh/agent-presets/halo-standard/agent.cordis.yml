@@ -250,8 +250,11 @@
 
 # The `web` service and its search provider stay in the host composition; only
 # the model-facing tool is per-session.
+# DISABLED (HALO): the built-in search backend needs a DeepSeek cloud key we
+# don't carry. Web reach comes from the Exa MCP row instead (mcp__exa__* tools).
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
+  disabled: true
   config:
     fetch: false
     searchTimeoutMs: 60000

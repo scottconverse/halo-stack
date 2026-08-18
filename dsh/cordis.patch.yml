@@ -18,6 +18,10 @@
         command: cmd
         args: ['/c', 'opencode', 'acp']   # npm shim is .ps1/.cmd — needs cmd /c on Windows
 
+# Built-in DeepSeek cloud search: no API key on this machine; Exa MCP serves search instead.
+- id: web-search-deepseek
+  disabled: true
+
 # Phase 3: MCP servers
 - insert:
     # DISABLED 2026-08-17: @browsermcp/mcp latest crashes on Windows when port
@@ -31,6 +35,14 @@
         transport: stdio
         command: npx
         args: ['@browsermcp/mcp@latest']
+    # Keyless web search: Exa's public MCP server (free tier, ~150 calls/day, 3 QPS).
+    # Add EXA_API_KEY auth later only if the free tier ever pinches.
+    - id: mcp-exa
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: exa
+        transport: streamable-http
+        url: https://mcp.exa.ai/mcp
     - id: mcp-memory
       name: '@deepseek-ai/dsh-mcp-client'
       config:

@@ -44,6 +44,12 @@ is a hidden process; it dies with logoff/reboot, or leave it running — it idle
 - **Memory:** say "remember this: …" and it stores a fact in the knowledge graph
   (`~\.dsh\memory\memory.json`) that any future session can recall — survives reboots.
   Ask "what's in your memory about X" to retrieve.
+- **Web search & page reading:** every session has `mcp__exa__` tools — live web
+  search plus fetch-any-URL-as-markdown — via Exa's keyless public MCP endpoint
+  (free tier ≈150 calls/day, 3/sec). Ask naturally: "search the web for…" /
+  "read this page…". To lift the cap later: free Exa key → `~\.dsh\.env` and
+  re-enable the native `tool-web` row. The built-in DeepSeek search stays
+  disabled (needs a paid cloud key).
 - **Session log:** top-right button downloads the full append-only log of any session.
 
 ## Model operations
