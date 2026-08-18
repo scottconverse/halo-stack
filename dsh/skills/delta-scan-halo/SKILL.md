@@ -72,6 +72,12 @@ reddit.com content — a licensing hole — and Jina's reader is blocked by Redd
 - ACTIONABLE = fixes one of the five known bugs; a dsh release past rc.7 with
   Windows fixes; a quant/model likely to beat current bench numbers at
   equal-or-smaller size; a security issue in anything we run.
+- Nemotron worker gate (benched 2026-08-17: DNS — LM Studio v2.28.2 engine
+  predates nemotron_h_moe, bare llama.cpp b10472 loads it fine): when an
+  LM Studio engine update ships, test-load
+  `nvidia-nemotron-3.5-lightning-30b-a3b` (already on disk) and if it loads,
+  flag ACTIONABLE: run the worker bench vs Qwen3 Coder (incumbent: 41 s task,
+  90.9 t/s decode, 16.3 GB vs challenger's 22.8 GB).
 - ROCm-engine ripeness gates (researched 2026-08-17; bench Vulkan-vs-ROCm only
   when BOTH clear): (1) lmstudio-ai/lms issue #494 (gfx1151 ROCm crashes on
   non-small models) closed or fixed in a runtime release; (2) LM Studio ships
