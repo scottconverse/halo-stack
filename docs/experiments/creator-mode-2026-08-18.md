@@ -117,8 +117,36 @@ own conservative reply budget), and several operator steering interventions.
   repo like any other config surface (manual §Creator mode).
 
 ---
-## Appendix A — 32K one-shot verdict
-[pending]
+## Appendix A — 32K one-shot verdict (measured, 2026-08-18 evening)
+The operator's question — "would 32,768 have continued?" — got its empirical
+answer: **no, and for a more interesting reason than the cap.** With
+maxTokens raised to 32,768, the one-shot reply truncated at ~25.1K tokens —
+**below the configured budget**. The binding constraint had moved: the
+session sat at ~54% of its 65,536-token window, leaving ~25K of room, and a
+reply can only be as large as the space remaining. The harness's compaction
+fires BETWEEN turns at 80% — nothing can rescue a single reply that
+outgrows the window mid-emit.
+
+Findings this hardens:
+1. The earlier caps (8K/16K/24K) were self-inflicted and cost real hours —
+   that stands. But even a generous cap cannot beat the window: the
+   effective reply budget is always `min(maxTokens, context room)`, and a
+   mature session simply cannot host a monolithic ~30K+ emit.
+2. Full-v3-in-one-shot on this stack requires a YOUNG session (fresh
+   context ≈ 50K of room after system+tools). Untested here — predicted
+   viable — but by this point the Mission Control implementation had
+   superseded the deliverable, so burning another hour of GPU to prove a
+   corollary wasn't worth it. Recorded as the expected result, clearly
+   labeled unverified.
+3. The durable lesson for creator-mode work: **incremental packages sized
+   well under the remaining window are the only strategy that scales with
+   session age** — which is what the split-increment steering had converged
+   on before the question was re-opened.
+4. Total experiment bill at close: **10 turns · 34 steps · 4h59m LLM time ·
+   1.1M tokens in · 173K out · seven cap/window truncations · two clean
+   compactions.** The capability verdict from the main body stands
+   unchanged: the local brain CAN author and mount live plugins; the
+   monolithic-emit pattern is what cannot survive a long session.
 
 ## Appendix B — Mission Control Memory tab acceptance (PASSED, 2026-08-18 evening)
 Built by a Sonnet agent against an operator-approved spec (~6 min build);
