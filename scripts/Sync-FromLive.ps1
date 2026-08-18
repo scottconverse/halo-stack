@@ -6,7 +6,9 @@ $map = @(
     # dsh config surface
     @{ src = "$U\.dsh\settings.yaml";                dst = "dsh\settings.yaml" }
     @{ src = "$U\.dsh\cordis.patch.yml";             dst = "dsh\cordis.patch.yml" }
-    @{ src = "$U\.dsh\.env";                         dst = "dsh\dot-env" }   # placeholder key only
+    # NOTE: $U\.dsh\.env is deliberately NOT synced — it now holds real API keys.
+    # The repo carries dsh\dot-env.template instead; Deploy writes it only if
+    # no live .env exists.
     @{ src = "$U\.dsh\Start-DSH.ps1";                dst = "dsh\Start-DSH.ps1" }
     @{ src = "$U\.dsh\Start-MissionControl.ps1";     dst = "dsh\Start-MissionControl.ps1" }
     @{ src = "$U\.dsh\bench-overlay-coder.yml";      dst = "dsh\overlays\bench-overlay-coder.yml" }
@@ -16,6 +18,8 @@ $map = @(
     @{ src = "$U\.dsh\.agent-presets\halo-standard\preset.yml";       dst = "dsh\agent-presets\halo-standard\preset.yml" }
     # Harness skills
     @{ src = "$U\.dsh\skills\delta-scan-halo\SKILL.md"; dst = "dsh\skills\delta-scan-halo\SKILL.md" }
+    # Shared-root skills (~\.agents\skills — visible to Claude Code AND the harness)
+    @{ src = "$U\.agents\skills\reddit-search\SKILL.md"; dst = "agents-skills\reddit-search\SKILL.md" }
     # LM Studio loader scripts
     @{ src = "$U\.lmstudio\scripts\Load-OpenCode-Qwen.mjs"; dst = "lmstudio\Load-OpenCode-Qwen.mjs" }
     @{ src = "$U\.lmstudio\scripts\Load-Worker-Coder.mjs";  dst = "lmstudio\Load-Worker-Coder.mjs" }

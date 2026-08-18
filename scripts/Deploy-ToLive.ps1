@@ -7,7 +7,8 @@ $U = $env:USERPROFILE
 $map = @(
     @{ src = "dsh\settings.yaml";                dst = "$U\.dsh\settings.yaml" }
     @{ src = "dsh\cordis.patch.yml";             dst = "$U\.dsh\cordis.patch.yml" }
-    @{ src = "dsh\dot-env";                      dst = "$U\.dsh\.env" }
+    # .env is template-only: never overwrite a live keys file.
+    @{ src = "dsh\dot-env.template";             dst = "$U\.dsh\.env"; skipIfExists = $true }
     @{ src = "dsh\Start-DSH.ps1";                dst = "$U\.dsh\Start-DSH.ps1" }
     @{ src = "dsh\Start-MissionControl.ps1";     dst = "$U\.dsh\Start-MissionControl.ps1" }
     @{ src = "dsh\overlays\bench-overlay-coder.yml";     dst = "$U\.dsh\bench-overlay-coder.yml" }
@@ -16,6 +17,7 @@ $map = @(
     @{ src = "dsh\agent-presets\halo-standard\agent.cordis.yml"; dst = "$U\.dsh\.agent-presets\halo-standard\agent.cordis.yml" }
     @{ src = "dsh\agent-presets\halo-standard\preset.yml";       dst = "$U\.dsh\.agent-presets\halo-standard\preset.yml" }
     @{ src = "dsh\skills\delta-scan-halo\SKILL.md"; dst = "$U\.dsh\skills\delta-scan-halo\SKILL.md" }
+    @{ src = "agents-skills\reddit-search\SKILL.md"; dst = "$U\.agents\skills\reddit-search\SKILL.md" }
     @{ src = "lmstudio\Load-OpenCode-Qwen.mjs";  dst = "$U\.lmstudio\scripts\Load-OpenCode-Qwen.mjs" }
     @{ src = "lmstudio\Load-Worker-Coder.mjs";   dst = "$U\.lmstudio\scripts\Load-Worker-Coder.mjs" }
     @{ src = "lmstudio\Sweep-MTP.mjs";           dst = "$U\.lmstudio\scripts\Sweep-MTP.mjs" }
@@ -25,6 +27,7 @@ $map = @(
 
 foreach ($m in $map) {
     $source = Join-Path $repo $m.src
+    if ($m.skipIfExists -and (Test-Path $m.dst)) { Write-Host "kept existing $($m.dst)"; continue }
     if (Test-Path $source) {
         New-Item -ItemType Directory -Force (Split-Path $m.dst) | Out-Null
         Copy-Item $source $m.dst -Force

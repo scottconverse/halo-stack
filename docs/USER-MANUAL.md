@@ -45,11 +45,16 @@ is a hidden process; it dies with logoff/reboot, or leave it running — it idle
   (`~\.dsh\memory\memory.json`) that any future session can recall — survives reboots.
   Ask "what's in your memory about X" to retrieve.
 - **Web search & page reading:** every session has `mcp__exa__` tools — live web
-  search plus fetch-any-URL-as-markdown — via Exa's keyless public MCP endpoint
-  (free tier ≈150 calls/day, 3/sec). Ask naturally: "search the web for…" /
-  "read this page…". To lift the cap later: free Exa key → `~\.dsh\.env` and
-  re-enable the native `tool-web` row. The built-in DeepSeek search stays
-  disabled (needs a paid cloud key).
+  search plus fetch-any-URL-as-markdown — now **keyed** (free Exa account:
+  ~1,400 funded searches/month recurring; key in `~\.dsh\.env`, referenced by
+  env everywhere, never committed). Ask naturally: "search the web for…".
+  Fallback page reader for stubborn non-Reddit pages: `r.jina.ai/<url>` (plain
+  HTTP, keyless). The built-in DeepSeek search stays disabled.
+- **Reddit research:** type **`/reddit-search`** (shared skill, works in Claude
+  Code too). Reddit is unreachable via Exa (licensing hole) and Jina (blocked);
+  the skill uses Reddit's own RSS feeds — search, subreddit, and per-thread
+  comment feeds (188 comments verified from one megathread) — paced ≥8 s
+  between requests to respect anonymous rate limits.
 - **Session log:** top-right button downloads the full append-only log of any session.
 
 ## Model operations

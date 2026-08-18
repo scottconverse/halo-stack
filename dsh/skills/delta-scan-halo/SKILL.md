@@ -56,11 +56,15 @@ reachable from this machine):
 6. llama.cpp: https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=3
    — Vulkan/AMD performance, KV-cache, MTP changes LM Studio will inherit.
 
-Then the community layer via the Exa tools (Reddit's JSON API 403-blocks this
-machine; Exa is the reliable path):
-7. Search: "Strix Halo LLM", "Ryzen AI Max 395 llama.cpp", "Qwen3.8 27B",
-   "DeepSeek Harness dsh" — recent threads, articles, benchmarks. Fetch and
-   read anything load-bearing before citing it.
+Then the community layer, split by source (verified 2026-08-17: Exa serves ZERO
+reddit.com content — a licensing hole — and Jina's reader is blocked by Reddit):
+7. **Reddit**: use the `reddit-search` skill's RSS procedure — search feeds on
+   r/LocalLLaMA for "strix halo", "Qwen3.8", "DeepSeek Harness"; pace ≥8 s
+   between Reddit requests; read the top 2-3 threads via their `.rss` comment
+   feeds.
+8. **Articles/blogs/benchmarks**: Exa tools ("Strix Halo LLM", "Ryzen AI Max
+   395 llama.cpp", "DeepSeek Harness dsh") — fetch and read anything
+   load-bearing before citing it.
 
 ## Delta criteria
 - Report only items newer than the last scan date from `halo-monitor-state`

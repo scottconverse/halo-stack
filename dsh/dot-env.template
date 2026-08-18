@@ -1,0 +1,5 @@
+# Deployed as ~\.dsh\.env on rebuild (only if no .env exists — never overwrites keys).
+LMSTUDIO_API_KEY=lm-studio
+# Free key from https://dashboard.exa.ai (API Keys page). Enables keyed Exa search
+# (~1,400 funded searches/month recurring) and lifts the MCP free-tier limits.
+EXA_API_KEY=

@@ -42,7 +42,7 @@
       config:
         serverName: exa
         transport: streamable-http
-        url: https://mcp.exa.ai/mcp
+        url: !!js "`https://mcp.exa.ai/mcp${process.env.EXA_API_KEY ? `?exaApiKey=${process.env.EXA_API_KEY}` : ''}`"   # keyed via .env: lifts free-tier limits; keyless if unset
     - id: mcp-memory
       name: '@deepseek-ai/dsh-mcp-client'
       config:
