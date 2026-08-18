@@ -72,6 +72,12 @@ reddit.com content — a licensing hole — and Jina's reader is blocked by Redd
 - ACTIONABLE = fixes one of the five known bugs; a dsh release past rc.7 with
   Windows fixes; a quant/model likely to beat current bench numbers at
   equal-or-smaller size; a security issue in anything we run.
+- ROCm-engine ripeness gates (researched 2026-08-17; bench Vulkan-vs-ROCm only
+  when BOTH clear): (1) lmstudio-ai/lms issue #494 (gfx1151 ROCm crashes on
+  non-small models) closed or fixed in a runtime release; (2) LM Studio ships
+  an engine containing llama.cpp b10472+ (HIP UMA memory fix — cures lms #589).
+  Prize if gates clear: ROCm holds long-context throughput where Vulkan
+  degrades — our exact workload shape.
 - ALWAYS check new dsh release notes/diffs for telemetry changes: the default
   must remain DISABLED and the exporter opt-in (audited 2026-08-17, see
   docs/AUDIT-telemetry-2026-08-17.md). A default flip = ACTIONABLE, do-not-upgrade.
