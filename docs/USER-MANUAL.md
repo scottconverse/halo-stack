@@ -537,6 +537,20 @@ is a hidden process; it dies with logoff/reboot, or leave it running — it idle
   the skill uses Reddit's own RSS feeds — search, subreddit, and per-thread
   comment feeds (188 comments verified from one megathread) — paced ≥8 s
   between requests to respect anonymous rate limits.
+- **Trajectory button:** the per-turn transparency view — exactly what entered
+  the context (every block), every tool call, and every result, step by step.
+  When a turn goes wrong, read the trajectory before blaming the model: it
+  shows what the model actually saw, which is usually the answer.
+- **Creator mode** (the **Cordis** preset in the picker): the agent can build
+  new plugins — tools, services, even whole UI panels — onto the *running*
+  cockpit from plain English, using the same Cordis machinery documented in
+  [`AUDIT-cordis-concepts-2026-08-18.md`](AUDIT-cordis-concepts-2026-08-18.md).
+  Facts that matter before using it: dynamic plugins live in **process memory
+  only** and vanish on restart — ask the agent to *register it permanently* if
+  you want to keep one; the Cordis plugin panel keeps **prior versions** of an
+  in-progress plugin, so you can roll a broken iteration back instead of
+  starting over; and a kept plugin is real code on this machine — sync it into
+  the repo like every other config surface so it's versioned and auditable.
 - **Session log:** top-right button downloads the full append-only log of any session.
 
 ## Mission Control (the operator console)
