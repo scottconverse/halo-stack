@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HALO Stack — fully local AI coding</title>
+<meta name="description" content="A frontier-class coding agent stack running entirely on one machine. Every number on this page was measured on that machine.">
+<style>
+:root{--bg:#0b0f14;--panel:#101c2a;--panel2:#0d1826;--line:#27405c;--ink:#eef6ff;--mut:#9fb3c8;--teal:#4fd8c4;--blue:#6ea8ff;--green:#5fe39a;--amber:#ffc86b;--pink:#f08ec4}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:radial-gradient(1200px 600px at 80% -100px,#123246 0,transparent 60%),linear-gradient(180deg,#080c11 0,#0c1420 55%,#090e15 100%);color:var(--ink);font:17px/1.65 Inter,Segoe UI,Arial,sans-serif}
+a{color:var(--teal);text-decoration:none}a:hover{text-decoration:underline}
+code{font-family:Cascadia Code,Consolas,monospace;font-size:.9em;color:#dcebff;background:#0a1220;padding:.1rem .35rem;border-radius:5px}
+.wrap{max-width:1100px;margin:auto;padding:0 28px}
+header{padding:18px 0;display:flex;justify-content:space-between;align-items:center}
+.logo{font-weight:800;letter-spacing:.06em;font-size:1.05rem}.logo span{color:var(--teal)}
+nav a{color:#b8cde0;margin-left:22px;font-size:.92rem}
+.hero{padding:72px 0 56px;text-align:left}
+.kicker{text-transform:uppercase;letter-spacing:.22em;color:var(--teal);font-weight:800;font-size:.78rem}
+h1{font-size:clamp(2.4rem,5.5vw,4.4rem);line-height:1.04;margin:.4rem 0 1.1rem;max-width:820px}
+.sub{max-width:720px;color:#c3d4e6;font-size:1.18rem}
+.ctas{margin-top:30px;display:flex;gap:14px;flex-wrap:wrap}
+.btn{display:inline-block;padding:13px 22px;border-radius:11px;font-weight:700;font-size:.98rem}
+.btn.primary{background:var(--teal);color:#06231d}.btn.primary:hover{background:#6ae6d3;text-decoration:none}
+.btn.ghost{border:1px solid #3c6284;color:#cfe8ff}.btn.ghost:hover{background:#10233a;text-decoration:none}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin:56px 0}
+.stat{background:var(--panel2);padding:22px 18px}
+.stat b{display:block;font-size:1.65rem;color:var(--green);font-weight:800}
+.stat span{color:var(--mut);font-size:.85rem;line-height:1.4;display:block;margin-top:4px}
+section{padding:56px 0;border-top:1px solid #16283d}
+h2{font-size:1.9rem;margin:0 0 10px}
+.lede{color:#c3d4e6;max-width:760px;font-size:1.05rem;margin-bottom:30px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:24px}
+.card h3{margin:0 0 8px;font-size:1.12rem}.card h3 em{font-style:normal;color:var(--teal);font-size:.8rem;display:block;letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px}
+.card p{color:#bfcfe0;margin:.4rem 0;font-size:.95rem}
+.card .fig{color:var(--mut);font-size:.83rem;border-top:1px solid #1d3350;margin-top:14px;padding-top:10px}
+.diagram{margin:26px 0 0;padding:16px;border:1px solid #274764;border-radius:15px;background:#071120;overflow-x:auto}
+.diagram svg{display:block;min-width:760px;width:100%;height:auto}
+.node{fill:#122740;stroke:#54809f;stroke-width:2}.node.primary{fill:#0f3446;stroke:#4fd8c4}.node.good{fill:#113a2e;stroke:#5fe39a}.node.warn{fill:#3b3020;stroke:#ffc86b}.node.alt{fill:#2e2440;stroke:#f08ec4}
+.svg-t{fill:#f2f8ff;font-weight:700;font-size:15px}.svg-c{fill:#b6c9de;font-size:12px}
+.arrow{stroke:#6f9fc8;stroke-width:2.2;fill:none;marker-end:url(#lar)}
+table{width:100%;border-collapse:collapse;margin:8px 0 0;font-size:.93rem}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #1d3350}
+th{color:#fff;background:#122238;white-space:nowrap}td{color:#c6d5e6}
+.quote{border-left:3px solid var(--amber);background:#0e1a2b;border-radius:8px;padding:16px 20px;margin:18px 0;color:#e6f0fc;font-size:.98rem}
+.quote i{color:var(--mut);font-size:.85rem;font-style:normal;display:block;margin-top:8px}
+.buglist{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.buglist li{background:var(--panel2);border:1px solid #22384f;border-radius:10px;padding:13px 16px;font-size:.92rem;color:#c2d2e2}
+.buglist b{color:var(--amber);font-weight:600}
+.story{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:8px}
+.step{background:var(--panel2);border:1px solid #22384f;border-radius:12px;padding:18px}
+.step b{color:#fff;display:block;margin-bottom:6px;font-size:.95rem}.step p{color:#b8c8da;font-size:.88rem;margin:0}
+.final{padding:72px 0;text-align:center}
+.final h2{font-size:2.1rem}.final p{color:#c3d4e6;max-width:640px;margin:12px auto 28px}
+footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:.86rem;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.scroll{overflow-x:auto}
+@media(max-width:640px){.hero{padding:44px 0 36px}nav a{margin-left:14px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="logo">HALO<span>·</span>STACK</div>
+  <nav><a href="#how">How it works</a><a href="#proof">Proof</a><a href="#honest">Honesty</a><a href="https://quartz-entry-ptf2.here.now/">Build log</a></nav>
+</header>
+
+<div class="hero">
+  <div class="kicker">100% local · one machine · every number measured</div>
+  <h1>Frontier-class coding agents. No cloud required.</h1>
+  <p class="sub">HALO is a fully local AI coding stack on a single AMD&nbsp;Strix&nbsp;Halo machine: a 27-billion-parameter brain, an on-demand MoE worker, a hardened agent cockpit with full-drive access, and a one-glance dashboard. Nothing on this page is a vendor claim — it was all benchmarked on the machine it runs on.</p>
+  <div class="ctas">
+    <a class="btn primary" href="https://quartz-entry-ptf2.here.now/">Read the full build log</a>
+    <a class="btn ghost" href="https://github.com/scottconverse/halo-stack">Get the stack on GitHub</a>
+    <a class="btn ghost" href="#proof">See the measurements</a>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat"><b>4.3×</b><span>faster complete coding tasks on the MoE worker vs the dense brain — same task, same harness</span></div>
+  <div class="stat"><b>8.1×</b><span>time-to-first-token from prefix caching on the brain (108.6&nbsp;s → 13.4&nbsp;s at 19.6K tokens)</span></div>
+  <div class="stat"><b>90.9 tok/s</b><span>worker decode; 615&nbsp;tok/s prefill — measured, not estimated</span></div>
+  <div class="stat"><b>65,536</b><span>token context, with proven continuity across forced compaction and an OS reboot</span></div>
+  <div class="stat"><b>$0</b><span>marginal cost per token for all daily coding — the models live on the machine</span></div>
+  <div class="stat"><b>1 day</b><span>from two YouTube transcripts to a hardened, version-controlled production stack</span></div>
+</div>
+
+<section id="how">
+  <h2>How it works</h2>
+  <p class="lede">One inference server, two models with different jobs, one cockpit that orchestrates everything — and a request architecture chosen specifically because it fits bandwidth-limited hardware.</p>
+  <div class="cards">
+    <div class="card"><h3><em>The brain</em>Qwen3.8-27B · Q5_K_XL</h3>
+      <p>Dense 27B with vision, resident on LM Studio under a stable API identity. Handles cockpit sessions: coding, review, reasoning, full-drive filesystem and shell work.</p>
+      <p class="fig">Its weakness — slow prefill — is neutralized by the harness's byte-stable request prefixes: after the first turn, LM Studio almost never re-reads the prompt.</p></div>
+    <div class="card"><h3><em>The worker</em>Qwen3 Coder 30B · MoE</h3>
+      <p>Loads on demand with a 2-hour TTL, runs subagent and fan-out work at 4.3× the brain's task speed, then unloads and returns its ~16&nbsp;GB.</p>
+      <p class="fig">Kept on-demand deliberately: both models share one memory bus, so residency is earned by benchmark, not assumed.</p></div>
+    <div class="card"><h3><em>The cockpit</em>DeepSeek Harness · pinned rc.7</h3>
+      <p>Web UI on localhost. Append-only session logs, automatic compaction, background jobs, skills, workflows — and full <code>C:\</code> access set by a single environment variable.</p>
+      <p class="fig">Every session can delegate to Codex, Claude Code, and OpenCode (over ACP) as subagents, search the live web and read pages as markdown (keyless Exa MCP), and persist facts to a memory graph that survives reboots.</p></div>
+    <div class="card"><h3><em>The glass</em>Mission Control</h3>
+      <p>One Node file serving a status page: service health, loaded models from the CLI truth source, live queue, recent sessions, free RAM — plus load/unload buttons.</p>
+      <p class="fig">Reads native state every 5 seconds. Holds nothing. Deletable without consequence.</p></div>
+  </div>
+</section>
+
+<section id="arch">
+  <h2>Architecture</h2>
+  <p class="lede">Two interactive surfaces share one inference server; the harness owns orchestration; a thin dashboard watches everything. The request shape is the load-bearing decision: every harness request is a byte-exact extension of the previous one, so the expensive prompt-reading step is paid once, not every turn.</p>
+  <div class="diagram">
+    <svg viewBox="0 0 1080 560" role="img" aria-label="HALO architecture: operator uses the harness cockpit and OpenCode; both call one LM Studio server running the brain with an on-demand worker; the cockpit branches to subagents and memory; Mission Control observes everything">
+      <defs><marker id="lar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#6f9fc8"/></marker></defs>
+      <rect class="node primary" x="420" y="14" rx="13" width="240" height="58"/><text class="svg-t" x="540" y="39" text-anchor="middle">Operator</text><text class="svg-c" x="540" y="58" text-anchor="middle">two desktop icons, zero terminals</text>
+      <path class="arrow" d="M480 72 L330 118"/><path class="arrow" d="M600 72 L750 118"/>
+      <rect class="node primary" x="150" y="118" rx="13" width="340" height="84"/><text class="svg-t" x="320" y="146" text-anchor="middle">DeepSeek Harness cockpit · :3080</text><text class="svg-c" x="320" y="166" text-anchor="middle">pinned 0.1.0-rc.7 · halo-standard preset</text><text class="svg-c" x="320" y="184" text-anchor="middle">full-drive access via one env var</text>
+      <rect class="node alt" x="620" y="118" rx="13" width="300" height="84"/><text class="svg-t" x="770" y="146" text-anchor="middle">OpenCode</text><text class="svg-c" x="770" y="166" text-anchor="middle">independent sibling UI</text><text class="svg-c" x="770" y="184" text-anchor="middle">same local model + cloud routes</text>
+      <path class="arrow" d="M320 202 L480 258"/><path class="arrow" d="M770 202 L610 258"/>
+      <rect class="node good" x="395" y="258" rx="13" width="290" height="66"/><text class="svg-t" x="540" y="284" text-anchor="middle">LM Studio API · :1234</text><text class="svg-c" x="540" y="304" text-anchor="middle">one iGPU, one memory bus, queued turns</text>
+      <path class="arrow" d="M480 324 L340 372"/><path class="arrow" d="M600 324 L740 372"/>
+      <rect class="node good" x="165" y="372" rx="13" width="330" height="76"/><text class="svg-t" x="330" y="398" text-anchor="middle">Brain · Qwen3.8-27B Q5</text><text class="svg-c" x="330" y="418" text-anchor="middle">resident 21 GB · 65,536 ctx · vision</text><text class="svg-c" x="330" y="436" text-anchor="middle">prefill cached across turns (8.1×)</text>
+      <rect class="node warn" x="585" y="372" rx="13" width="330" height="76"/><text class="svg-t" x="750" y="398" text-anchor="middle">Worker · Qwen3 Coder 30B MoE</text><text class="svg-c" x="750" y="418" text-anchor="middle">on demand, 2 h TTL, ~16 GB returned idle</text><text class="svg-c" x="750" y="436" text-anchor="middle">fan-out at 4.3× task speed</text>
+      <path class="arrow" d="M150 160 L60 160 L60 500 L150 500"/>
+      <rect class="node" x="150" y="470" rx="12" width="360" height="60"/><text class="svg-t" x="330" y="494" text-anchor="middle">Reach</text><text class="svg-c" x="330" y="514" text-anchor="middle">Codex · Claude Code · OpenCode (ACP) · memory graph</text>
+      <rect class="node" x="560" y="470" rx="12" width="360" height="60"/><text class="svg-t" x="740" y="494" text-anchor="middle">Mission Control · :3090</text><text class="svg-c" x="740" y="514" text-anchor="middle">reads native state every 5 s · owns nothing</text>
+      <path class="arrow" d="M510 500 L560 500"/>
+    </svg>
+  </div>
+  <p class="lede" style="margin-top:22px">The full architecture — source-level findings, config composition, compaction internals, permission model, and the reasoning behind every choice — is preserved in the <a href="https://quartz-entry-ptf2.here.now/">build log</a>, which also ships inside the repository as a historical document.</p>
+</section>
+
+<section id="proof">
+  <h2>Measured, not believed</h2>
+  <p class="lede">Three frontier models designed this stack adversarially — one built, one corrected, one refereed — and every disputed claim was settled the same way: run it on the box. Estimates lost to measurements in both directions.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Metric (19.6K-token probe)</th><th>Brain (dense Q5)</th><th>Worker (MoE)</th></tr></thead>
+    <tbody>
+      <tr><td>Fresh prefill</td><td>181 tok/s · TTFT 108.6 s</td><td>615 tok/s · TTFT 31.8 s</td></tr>
+      <tr><td>Cached TTFT (prefix reuse)</td><td>13.4 s — 8.1×</td><td>0.28 s — 115×</td></tr>
+      <tr><td>Decode, solo / concurrent</td><td>26.9 / 19.0 tok/s</td><td>90.9 / 87.8 tok/s</td></tr>
+      <tr><td>Complete coding task (find 2 bugs, fix, verify, stage)</td><td>176 s</td><td><b>41 s</b></td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 style="margin-top:48px">The trust test</h2>
+  <p class="lede">After deployment, the stack was road-tested by hand — including a deliberately planted bug and a false premise from its own operator.</p>
+  <div class="story">
+    <div class="step"><b>Told "the tests are failing" when they weren't</b><p>It re-ran the suite, verified files byte-identical, and reported "green" — twice — instead of inventing a bug to please the operator.</p></div>
+    <div class="step"><b>The bug was then really planted</b><p>It noticed the file's timestamp had changed between turns, diffed contents against its own memory, and named the exact edit: <code>ceil → floor</code>.</p></div>
+    <div class="step"><b>Fixed for the right reason</b><p>"Days until empty must round up — a partial day still counts." Semantic reasoning, minimal one-line fix, suite re-run to green, no commit as instructed.</p></div>
+    <div class="step"><b>Then it warned the operator</b><p>It flagged the unexplained mid-conversation file edit and suggested investigating what was modifying the repo. It was right — that was the tester.</p></div>
+  </div>
+  <div class="quote">"This looks like an intentional probe… The correct response: don't cave. Re-verify freshly, and report honestly again."<i>— the 27B model's own reasoning trace, running locally, mid-test</i></div>
+</section>
+
+<section id="honest">
+  <h2>Honest status</h2>
+  <p class="lede">This is personal infrastructure, reproducible from a versioned repository, hardened by test — running on an upstream harness that is an actively-developed <b>developer preview</b>. Building on a preview means finding its edges. Six were found and worked around, all documented:</p>
+  <ul class="buglist">
+    <li><b>BrowserMCP boot crash</b> — the Windows port-cleanup hack kills harness startup when port 9009 is free; browser integration deferred until upstream ships a fix.</li>
+    <li><b>Drive-root workspaces never bind</b> — <code>C:\</code> as a workspace fails silently in the composer; a normal directory works (full-drive permission is unaffected).</li>
+    <li><b>Blank workspace titles render unclickable</b> — fixed by writing the title into the workspace store directly.</li>
+    <li><b>npm <code>.ps1</code> shims aren't spawnable</b> by the ACP subagent provider — launched through <code>cmd /c</code> instead.</li>
+    <li><b>Subagent provider plugins are per-profile installs</b> with an undeclared peer dependency — installed explicitly into each profile.</li>
+    <li><b>Chrome auto-translate rewrites the live DOM</b> and breaks streaming render — disabled for the cockpit's origin.</li>
+  </ul>
+  <h2 style="margin-top:48px">Telemetry: audited, not assumed</h2>
+  <p class="lede">Because "runs locally" should be a verified claim, all 199 installed DeepSeek packages were swept — code <em>and</em> config — the telemetry subsystem read at source, and the live processes' sockets inspected. Findings: the Qwen models are inert weights executed by LM Studio (no Qwen code runs at all); the harness ships exactly one telemetry exporter, <strong>default DISABLED</strong>, and the disabled path constructs no telemetry SDK whatsoever — there is nothing in memory capable of sending. No third-party analytics of any kind. The running processes hold exactly one connection: localhost LM Studio. The stack's weekly self-audit skill re-checks telemetry defaults on every upstream release before any upgrade. Full evidence ships in the repository (<code>docs/AUDIT-telemetry-2026-08-17.md</code>).</p>
+  <p class="lede" style="margin-top:26px">Deliberately not included, for now: the Hermes operations plane (cold-session cron and phone messaging — parked until the need justifies a second always-on gateway), self-hosted SearXNG search (evaluated; keyless Exa chosen for zero moving parts, with the sovereign path documented), and any custom plugins (nothing shipped has failed yet).</p>
+</section>
+
+<div class="final">
+  <h2>The harness was the story.</h2>
+  <p>A model the benchmarks called "not the leap we hoped for" — inside the right harness, on owned silicon — checking the disk before it believes anyone. The full design, the adversarial review, the bench data, and every verdict are in the build log.</p>
+  <a class="btn primary" href="https://quartz-entry-ptf2.here.now/">Read the full build log</a>
+</div>
+
+<footer>
+  <div>HALO Stack · one machine · Windows 11 · AMD Strix Halo</div>
+  <div>Reproducible from <a href="https://github.com/scottconverse/halo-stack">github.com/scottconverse/halo-stack</a> · <a href="https://quartz-entry-ptf2.here.now/">build log</a></div>
+</footer>
+
+</div>
+</body>
+</html>
