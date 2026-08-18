@@ -96,3 +96,7 @@ Full bug list with root causes: README §Known issues and `docs/phases/phase3-re
 - **BrowserMCP** — blocked on an upstream Windows crash; config row ships disabled.
 - **Cockpit autostart** — cleared to enable (reboot test passed); currently manual by
   preference.
+- **Self-hosted SearXNG** — evaluated 2026-08-17 as the fully sovereign search option
+  (uncapped, VPN-covered, runs in the existing WSL2 Ubuntu, no Docker needed). Passed
+  over in favor of keyless Exa for zero moving parts. Revisit if the 150/day cap
+  pinches or the Exa dependency chafes.
