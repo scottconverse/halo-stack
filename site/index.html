@@ -55,6 +55,7 @@ th{color:#fff;background:#122238;white-space:nowrap}td{color:#c6d5e6}
 .final h2{font-size:2.1rem}.final p{color:#c3d4e6;max-width:640px;margin:12px auto 28px}
 footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:.86rem;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 .scroll{overflow-x:auto}
+.pill{display:inline-block;margin-left:10px;padding:3px 10px;border-radius:999px;border:1px solid var(--teal);color:var(--teal);font-size:.72rem;font-weight:800;letter-spacing:.08em;vertical-align:middle}
 @media(max-width:640px){.hero{padding:44px 0 36px}nav a{margin-left:14px}}
 </style>
 </head>
@@ -63,11 +64,11 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
 
 <header>
   <div class="logo">HALO<span>·</span>STACK</div>
-  <nav><a href="#how">How it works</a><a href="#proof">Proof</a><a href="#honest">Honesty</a><a href="https://quartz-entry-ptf2.here.now/">Build log</a></nav>
+  <nav><a href="#how">How it works</a><a href="#proof">Proof</a><a href="#cordis">Kernel</a><a href="#honest">Honesty</a><a href="https://github.com/scottconverse/halo-stack/blob/master/CHANGELOG.md">Changelog</a><a href="https://quartz-entry-ptf2.here.now/">Build log</a></nav>
 </header>
 
 <div class="hero">
-  <div class="kicker">100% local · one machine · every number measured</div>
+  <div class="kicker">100% local · one machine · every number measured<span class="pill">v0.1.0</span></div>
   <h1>Frontier-class coding agents. No cloud required.</h1>
   <p class="sub">HALO is a fully local AI coding stack on a single AMD&nbsp;Strix&nbsp;Halo machine: a 27-billion-parameter brain, an on-demand MoE worker, a hardened agent cockpit with full-drive access, and a one-glance dashboard. Nothing on this page is a vendor claim — it was all benchmarked on the machine it runs on.</p>
   <div class="ctas">
@@ -83,7 +84,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
   <div class="stat"><b>90.9 tok/s</b><span>worker decode; 615&nbsp;tok/s prefill — measured, not estimated</span></div>
   <div class="stat"><b>65,536</b><span>token context, with proven continuity across forced compaction and an OS reboot</span></div>
   <div class="stat"><b>$0</b><span>marginal cost per token for all daily coding — the models live on the machine</span></div>
-  <div class="stat"><b>1 day</b><span>from two YouTube transcripts to a hardened, version-controlled production stack</span></div>
+  <div class="stat"><b>2 transcripts</b><span>from two YouTube transcripts to a hardened, version-controlled production stack</span></div>
 </div>
 
 <section id="how">
@@ -98,10 +99,10 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
       <p class="fig">Kept on-demand deliberately: both models share one memory bus, so residency is earned by benchmark, not assumed.</p></div>
     <div class="card"><h3><em>The cockpit</em>DeepSeek Harness · pinned rc.7</h3>
       <p>Web UI on localhost. Append-only session logs, automatic compaction, background jobs, skills, workflows — and full <code>C:\</code> access set by a single environment variable.</p>
-      <p class="fig">Every session can delegate to Codex, Claude Code, and OpenCode (over ACP) as subagents, search the live web and read pages as markdown (keyless Exa MCP), and persist facts to a memory graph that survives reboots.</p></div>
+      <p class="fig">Every session can delegate to Codex, Claude Code, and OpenCode (over ACP) as subagents, search the live web and read pages as markdown (keyed Exa MCP, ~1,400 funded searches/month) plus Reddit via a dedicated RSS skill, and persist facts to a memory graph that survives reboots.</p></div>
     <div class="card"><h3><em>The glass</em>Mission Control</h3>
-      <p>One Node file serving a status page: service health, loaded models from the CLI truth source, live queue, recent sessions, free RAM — plus load/unload buttons.</p>
-      <p class="fig">Reads native state every 5 seconds. Holds nothing. Deletable without consequence.</p></div>
+      <p>A 5-tab operator console — overview, models, sessions, plugins, system — behind a master alarm strip: HARNESS · MODELS · MEMORY · DISK · STREAM.</p>
+      <p class="fig">Full model catalog with per-model load/unload and TTL countdowns, sessions with tokens/TTFT/decode rates, all 166 plugin rows with real mined descriptions and lifecycle state, memory pools in GiB with a GPU shared-pool leak alarm, and a live log tail. Reads native state every 5 seconds. Deletable without consequence.</p></div>
   </div>
 </section>
 
@@ -153,6 +154,26 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
   <div class="quote">"This looks like an intentional probe… The correct response: don't cave. Re-verify freshly, and report honestly again."<i>— the 27B model's own reasoning trace, running locally, mid-test</i></div>
 </section>
 
+<section id="cordis">
+  <h2>The kernel's formal foundation, put to work</h2>
+  <p class="lede">DeepSeek Harness runs on the Cordis kernel — <em>"A Programming Paradigm for Spatiotemporal Composability"</em> (Shi, Zhang, Cui — Peking University / DeepSeek-AI) is the paper behind it: revertible effects and reactive coeffects, with a confluence theorem guaranteeing the running system always settles into the state a from-scratch config assembly would produce. Full 88-page read, six improvements derived and applied and verified on this machine the same day.</p>
+  <div class="cards">
+    <div class="card"><h3>Live config reconciliation</h3>
+      <p>Proven by experiment: a plugin row toggled in the live config activated ~20 s after save — both directions, zero restart, zero session disturbance. The restart ritual is retired; restarts remain only for harness upgrades and one Windows deadlock workaround.</p></div>
+    <div class="card"><h3>Transactional deploys</h3>
+      <p>Deploys are now a five-stage transaction: pre-validate, compose-validate the staged config in a sandboxed <code>DSH_HOME</code>, timestamped backup, apply, re-validate — with automatic rollback on failure. Rollback proven against a deliberately corrupted staging file.</p></div>
+    <div class="card"><h3>Lifecycle-aware monitoring</h3>
+      <p>Mission Control's plugin card now speaks the kernel's own state calculus — active / disabled / waiting / transitioning / failed, plus stuck detection — instead of flagging anything non-active as abnormal.</p></div>
+    <div class="card"><h3>Bench-overlay memory isolation</h3>
+      <p>Honest finding: Cordis's <code>isolate</code> exists and works, but the memory MCP's real state boundary is a subprocess env var outside the realm machinery, so it's a no-op there. Bench overlays now point at a separate scratch memory file instead — verified with the harness's own config dump.</p></div>
+    <div class="card"><h3>An architecture bar for future plugins</h3>
+      <p>Cordis-native components are now preferred over external MCP processes for anything new: in-paradigm plugins get guaranteed-clean removal and runtime capability limits; external processes sit outside the composability boundary — the same reason one bad row could crash the whole boot.</p></div>
+    <div class="card"><h3>Compensation for the unrevertible</h3>
+      <p>The memory graph is the one state the kernel can't undo. Compensation: an hourly, change-detected snapshot task now gives every bad memory write an undo path.</p></div>
+  </div>
+  <p class="lede" style="margin-top:22px">Full evidence, citations, and the incident that stress-tested the new deploy transaction mid-build: <a href="https://github.com/scottconverse/halo-stack/blob/master/docs/AUDIT-cordis-concepts-2026-08-18.md">docs/AUDIT-cordis-concepts-2026-08-18.md</a>.</p>
+</section>
+
 <section id="honest">
   <h2>Honest status</h2>
   <p class="lede">This is personal infrastructure, reproducible from a versioned repository, hardened by test — running on an upstream harness that is an actively-developed <b>developer preview</b>. Building on a preview means finding its edges. Six were found and worked around, all documented:</p>
@@ -166,7 +187,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
   </ul>
   <h2 style="margin-top:48px">Telemetry: audited, not assumed</h2>
   <p class="lede">Because "runs locally" should be a verified claim, all 199 installed DeepSeek packages were swept — code <em>and</em> config — the telemetry subsystem read at source, and the live processes' sockets inspected. Findings: the Qwen models are inert weights executed by LM Studio (no Qwen code runs at all); the harness ships exactly one telemetry exporter, <strong>default DISABLED</strong>, and the disabled path constructs no telemetry SDK whatsoever — there is nothing in memory capable of sending. No third-party analytics of any kind. The running processes hold exactly one connection: localhost LM Studio. The stack's weekly self-audit skill re-checks telemetry defaults on every upstream release before any upgrade. Full evidence ships in the repository (<code>docs/AUDIT-telemetry-2026-08-17.md</code>).</p>
-  <p class="lede" style="margin-top:26px">Deliberately not included, for now: the Hermes operations plane (cold-session cron and phone messaging — parked until the need justifies a second always-on gateway), self-hosted SearXNG search (evaluated; keyless Exa chosen for zero moving parts, with the sovereign path documented), and any custom plugins (nothing shipped has failed yet).</p>
+  <p class="lede" style="margin-top:26px">Deliberately not included, for now: the Hermes operations plane (cold-session cron and phone messaging — parked until the need justifies a second always-on gateway), self-hosted SearXNG search (evaluated; keyed Exa chosen for zero moving parts, with the sovereign path documented), and any custom plugins (nothing shipped has failed yet).</p>
 </section>
 
 <div class="final">
