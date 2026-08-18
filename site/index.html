@@ -97,7 +97,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
       <p class="fig">Kept on-demand deliberately: both models share one memory bus, so residency is earned by benchmark, not assumed.</p></div>
     <div class="card"><h3><em>The cockpit</em>DeepSeek Harness · pinned rc.7</h3>
       <p>Web UI on localhost. Append-only session logs, automatic compaction, background jobs, skills, workflows — and full <code>C:\</code> access set by a single environment variable.</p>
-      <p class="fig">Every session can delegate to Codex, Claude Code, and OpenCode (over ACP) as subagents, and persists facts to a memory graph that survives reboots.</p></div>
+      <p class="fig">Every session can delegate to Codex, Claude Code, and OpenCode (over ACP) as subagents, search the live web and read pages as markdown (keyless Exa MCP), and persist facts to a memory graph that survives reboots.</p></div>
     <div class="card"><h3><em>The glass</em>Mission Control</h3>
       <p>One Node file serving a status page: service health, loaded models from the CLI truth source, live queue, recent sessions, free RAM — plus load/unload buttons.</p>
       <p class="fig">Reads native state every 5 seconds. Holds nothing. Deletable without consequence.</p></div>
@@ -163,7 +163,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
     <li><b>Subagent provider plugins are per-profile installs</b> with an undeclared peer dependency — installed explicitly into each profile.</li>
     <li><b>Chrome auto-translate rewrites the live DOM</b> and breaks streaming render — disabled for the cockpit's origin.</li>
   </ul>
-  <p class="lede" style="margin-top:26px">Deliberately not included, for now: the Hermes operations plane (cold-session cron and phone messaging — parked until the need justifies a second always-on gateway) and any custom plugins (nothing shipped has failed yet).</p>
+  <p class="lede" style="margin-top:26px">Deliberately not included, for now: the Hermes operations plane (cold-session cron and phone messaging — parked until the need justifies a second always-on gateway), self-hosted SearXNG search (evaluated; keyless Exa chosen for zero moving parts, with the sovereign path documented), and any custom plugins (nothing shipped has failed yet).</p>
 </section>
 
 <div class="final">
