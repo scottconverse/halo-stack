@@ -5,13 +5,14 @@ The complete, reproducible configuration of the HALO local AI stack:
 Qwen3 Coder 30B MoE on-demand worker) + Mission Control + OpenCode config**,
 as designed, benched, and hardened on 2026-08-17.
 
-Live page (full design + measured results): https://quartz-entry-ptf2.here.now/
+**Landing page:** https://brave-willow-zrcc.here.now/ · **Build log** (full design + measured results): https://quartz-entry-ptf2.here.now/ · **[User manual](docs/USER-MANUAL.md)**
 
 ## Layout
 
 | Path | What it is | Live location |
 |---|---|---|
-| `docs/` | Design docs (Codex v1, Claude v1, v2 FINAL) + phase records 1–4 | — |
+| `docs/` | Design docs (Codex v1, Claude v1, v2 FINAL), **USER-MANUAL.md**, phase records 1–4, and `build-log-snapshot-2026-08-17.html` (archived copy of the published build log — the full architecture record) | — |
+| `site/` | Landing page source (self-contained; published to here.now) | — |
 | `dsh/` | Harness config surface: `settings.yaml` (provider route), `cordis.patch.yml` (MCP + subagent rows), launchers, bench overlays | `~\.dsh\` |
 | `dsh/agent-presets/halo-standard/` | Default preset: standard + Codex/Claude/OpenCode subagent tools | `~\.dsh\.agent-presets\halo-standard\` |
 | `lmstudio/` | Pinned model loaders (brain, worker) + MTP sweep tool | `~\.lmstudio\scripts\` |
