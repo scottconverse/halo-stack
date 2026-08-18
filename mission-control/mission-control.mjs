@@ -365,7 +365,7 @@ function todayStats(sessions) {
 
 function parseMemoryFile() {
   const entities = [];
-  let relationCount = 0;
+  const relations = [];
   try {
     const lines = fs.readFileSync(MEMORY_FILE, 'utf8').split('\n');
     for (const line of lines) {
@@ -373,10 +373,10 @@ function parseMemoryFile() {
       let obj;
       try { obj = JSON.parse(line); } catch { continue; }
       if (obj.type === 'entity') entities.push({ name: obj.name, entityType: obj.entityType, observations: obj.observations || [] });
-      else if (obj.type === 'relation') relationCount++;
+      else if (obj.type === 'relation') relations.push({ from: obj.from, to: obj.to, relationType: obj.relationType });
     }
   } catch { /* missing/unreadable */ }
-  return { entities, relationCount };
+  return { entities, relations, relationCount: relations.length };
 }
 
 function monitorDue(entities) {
@@ -725,6 +725,19 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 .detail{background:#0c1620;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:4px 0 10px;font-size:.82rem}
 .spark{display:block}
 .tabsection{margin-bottom:22px}
+/* memory graph */
+.mgraph-wrap{display:flex;gap:14px;height:calc(100vh - 260px);min-height:460px}
+.mgraph-canvas{flex:1 1 auto;min-width:0;background:#0c1620;border:1px solid var(--line);border-radius:8px;overflow:hidden;position:relative}
+.mgraph-canvas svg{display:block;width:100%;height:100%}
+.mgraph-side{width:300px;flex:none;display:flex;flex-direction:column;gap:10px;min-height:0}
+.mgraph-legend{background:#0c1620;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:.8rem;max-height:180px;overflow:auto;flex:none}
+.mgraph-legend-item{display:flex;align-items:center;gap:7px;padding:2px 0}
+.mgraph-swatch{width:10px;height:10px;border-radius:50%;flex:none}
+.mgraph-detail{background:#0c1620;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:.82rem;flex:1;overflow:auto;min-height:0}
+.mgraph-conn-btn{display:block;width:100%;text-align:left;margin:3px 0;background:#12344c;color:#cfe8ff;border:1px solid #3c6284;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:.78rem}
+.mgraph-conn-btn:hover{background:#164058}
+.mgraph-obs{margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #1a2c42}
+.mgraph-obs:last-child{border:none}
 </style></head><body>
 <h1>HALO Mission Control</h1><div class="sub">Reads native state every 5 s &middot; holds only trend/cadence state &middot; <span id="stamp"></span></div>
 <div id="strip" class="strip"></div>
@@ -735,6 +748,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 <button class="tabbtn" data-tab="sessions">Sessions</button>
 <button class="tabbtn" data-tab="plugins">Plugins</button>
 <button class="tabbtn" data-tab="system">System</button>
+<button class="tabbtn" data-tab="memory">Memory</button>
 </nav>
 
 <div id="tab-overview" class="tabpanel">
@@ -797,6 +811,23 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 <div class="card tabsection"><h2>Log tail <button style="float:right" onclick="loadLogtail()">Refresh</button></h2><div id="sys-logtail" class="mono"></div></div>
 </div>
 
+<div id="tab-memory" class="tabpanel">
+<div class="card" style="padding:12px 14px">
+<div class="filterbar" style="justify-content:space-between">
+<h2 style="margin:0" id="mg-header">Memory Graph &middot; &hellip;</h2>
+<button onclick="loadMemoryGraphTab()">Refresh</button>
+</div>
+<div id="mg-status" class="mut" style="margin:2px 0 10px"></div>
+<div class="mgraph-wrap">
+<div id="mg-canvas" class="mgraph-canvas"></div>
+<div class="mgraph-side">
+<div class="mgraph-legend"><div class="mut" style="margin-bottom:6px;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">Entity types</div><div id="mg-legend"></div></div>
+<div id="mg-detail" class="mgraph-detail"><div class="mut">Click a node to see its details.</div></div>
+</div>
+</div>
+</div>
+</div>
+
 <script>
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function fmtK(n){return n==null?'&mdash;':(Math.round(n/1024*10)/10)+'K'}
@@ -831,6 +862,7 @@ function onTabShown(name){
   if(name==='sessions') loadSessions();
   if(name==='plugins') loadPlugins();
   if(name==='system'){ loadMemoryGraph(); loadLogtail(); }
+  if(name==='memory') loadMemoryGraphTab();
 }
 document.querySelectorAll('.tabbtn').forEach(function(b){b.addEventListener('click', function(){ location.hash='#'+b.dataset.tab })});
 window.addEventListener('hashchange', function(){ showTab((location.hash||'#overview').slice(1) || 'overview') });
@@ -1161,6 +1193,322 @@ async function loadLogtail(){
   }catch(e){ document.getElementById('sys-logtail').innerHTML='<div class="mut">log tail failed</div>' }
 }
 
+// ── memory tab: hand-rolled force-directed knowledge graph (no libs) ──
+var MG_PALETTE=['#4fd8c4','#5fe39a','#ffc86b','#ff8080','#7fa8d9','#c58fe6','#f08fc0','#a8d95f','#5fb8e3','#e3a55f','#8fe3c8','#e35f8f'];
+function mgHashStr(s){ s=String(s||''); var h=0; for(var i=0;i<s.length;i++){ h=((h<<5)-h+s.charCodeAt(i))|0; } return Math.abs(h); }
+function mgColorFor(entityType){ return MG_PALETTE[mgHashStr(entityType)%MG_PALETTE.length]; }
+
+var mg={svg:null,viewport:null,nodes:[],edges:[],byId:{},tx:0,ty:0,k:1,w:800,h:500,selected:null,
+  dragNode:null,moved:false,panning:false,panMoved:false};
+
+async function loadMemoryGraphTab(){
+  var statusEl=document.getElementById('mg-status');
+  var headerEl=document.getElementById('mg-header');
+  var canvas=document.getElementById('mg-canvas');
+  var legendEl=document.getElementById('mg-legend');
+  statusEl.textContent='loading\\u2026';
+  var g;
+  try{
+    var resp=await fetch('/api/memory-graph');
+    if(!resp.ok) throw new Error('http '+resp.status);
+    g=await resp.json();
+  }catch(e){
+    headerEl.textContent='Memory Graph \\u2014 unavailable';
+    statusEl.innerHTML='<span style="color:var(--red)">degraded: could not reach /api/memory-graph (dsh/mission-control unreachable). No graph is shown \\u2014 this is not a fake/empty render.</span>';
+    canvas.innerHTML='';
+    legendEl.innerHTML='';
+    document.getElementById('mg-detail').innerHTML='<div class="mut">Click a node to see its details.</div>';
+    return;
+  }
+  var entities=g.entities||[];
+  var relations=g.relations||[];
+  headerEl.textContent='Memory Graph \\u00b7 '+entities.length+' entities \\u00b7 '+relations.length+' relations';
+  statusEl.textContent=entities.length? '' : 'no entities recorded yet in memory.json';
+
+  mg.nodes=entities.map(function(e){ return {id:e.name,name:e.name,entityType:e.entityType,observations:e.observations||[],color:mgColorFor(e.entityType),x:0,y:0}; });
+  mg.byId={}; mg.nodes.forEach(function(n){ mg.byId[n.id]=n });
+  // Drop relations pointing at an entity name we don't have (keeps the
+  // renderer honest — never invent a node just to satisfy an edge).
+  mg.edges=relations.filter(function(r){ return mg.byId[r.from] && mg.byId[r.to]; }).map(function(r){ return {from:r.from,to:r.to,relationType:r.relationType||''}; });
+  mg.selected=null;
+
+  var legendTypes=[]; var seen={};
+  mg.nodes.forEach(function(n){ if(!seen[n.entityType]){ seen[n.entityType]=1; legendTypes.push(n.entityType); } });
+  legendEl.innerHTML=legendTypes.length? legendTypes.map(function(t){
+    return '<div class="mgraph-legend-item"><span class="mgraph-swatch" style="background:'+mgColorFor(t)+'"></span>'+esc(t)+'</div>';
+  }).join('') : '<div class="mut">no entity types</div>';
+
+  initMemoryGraphDom();
+  mgForceLayout(mg.nodes, mg.edges, mg.w, mg.h);
+  buildMemoryGraphElements();
+  mg.tx=0; mg.ty=0; mg.k=1;
+  applyMgTransform();
+  document.getElementById('mg-detail').innerHTML='<div class="mut">Click a node to see its details.</div>';
+}
+
+// Fruchterman-Reingold-lite: charge repulsion between every pair + spring
+// attraction along edges + weak centering, run for a fixed iteration count
+// then stop. Works with zero edges (pure repulsion spreads nodes out from a
+// deterministic circular seed) and with edges (springs pull related nodes
+// together). Seed jitter uses sin/cos of the index, not Math.random(), so
+// the layout is the same shape on every reload.
+function mgForceLayout(nodes, edges, W, H){
+  var n=nodes.length;
+  if(n===0) return;
+  var idIndex={}; nodes.forEach(function(node,i){ idIndex[node.id]=i; });
+  if(n===1){ nodes[0].x=W/2; nodes[0].y=H/2; return; }
+  var seedR=Math.min(W,H)*0.32;
+  nodes.forEach(function(node,i){
+    var angle=(i/n)*Math.PI*2;
+    node.x=W/2+seedR*Math.cos(angle)+Math.sin(i*12.9898)*6;
+    node.y=H/2+seedR*Math.sin(angle)+Math.cos(i*78.233)*6;
+  });
+  var k=Math.sqrt((W*H)/Math.max(n,1));
+  var iterations=300;
+  for(var iter=0; iter<iterations; iter++){
+    for(var i=0;i<n;i++){ nodes[i].fx=0; nodes[i].fy=0; }
+    for(var i=0;i<n;i++){
+      for(var j=i+1;j<n;j++){
+        var a=nodes[i], b=nodes[j];
+        var dx=a.x-b.x, dy=a.y-b.y;
+        var dist=Math.sqrt(dx*dx+dy*dy)||0.01;
+        var force=(k*k)/dist;
+        var fx=(dx/dist)*force, fy=(dy/dist)*force;
+        a.fx+=fx; a.fy+=fy; b.fx-=fx; b.fy-=fy;
+      }
+    }
+    for(var e=0;e<edges.length;e++){
+      var ai=idIndex[edges[e].from], bi=idIndex[edges[e].to];
+      if(ai==null||bi==null) continue;
+      var a=nodes[ai], b=nodes[bi];
+      var dx=a.x-b.x, dy=a.y-b.y;
+      var dist=Math.sqrt(dx*dx+dy*dy)||0.01;
+      var force=(dist*dist)/k;
+      var fx=(dx/dist)*force, fy=(dy/dist)*force;
+      a.fx-=fx; a.fy-=fy; b.fx+=fx; b.fy+=fy;
+    }
+    var temp=Math.max(0.4, k*0.12*(1-iter/iterations));
+    for(var i=0;i<n;i++){
+      var a=nodes[i];
+      a.fx+=(W/2-a.x)*0.008; a.fy+=(H/2-a.y)*0.008;
+      var flen=Math.sqrt(a.fx*a.fx+a.fy*a.fy)||0.01;
+      var cap=Math.min(flen,temp);
+      a.x+=(a.fx/flen)*cap; a.y+=(a.fy/flen)*cap;
+      a.x=Math.max(28,Math.min(W-28,a.x));
+      a.y=Math.max(28,Math.min(H-28,a.y));
+    }
+  }
+}
+
+var MG_NS='http://www.w3.org/2000/svg';
+function initMemoryGraphDom(){
+  var canvas=document.getElementById('mg-canvas');
+  canvas.innerHTML='';
+  var w=canvas.clientWidth||800, h=canvas.clientHeight||500;
+  mg.w=w; mg.h=h;
+  var svg=document.createElementNS(MG_NS,'svg');
+  svg.setAttribute('viewBox','0 0 '+w+' '+h);
+  svg.style.cursor='grab';
+  var defs=document.createElementNS(MG_NS,'defs');
+  var marker=document.createElementNS(MG_NS,'marker');
+  marker.setAttribute('id','mg-arrow');
+  marker.setAttribute('viewBox','0 0 10 10'); marker.setAttribute('refX','8'); marker.setAttribute('refY','5');
+  marker.setAttribute('markerWidth','7'); marker.setAttribute('markerHeight','7'); marker.setAttribute('orient','auto-start-reverse');
+  var mpath=document.createElementNS(MG_NS,'path');
+  mpath.setAttribute('d','M0,0 L10,5 L0,10 z'); mpath.setAttribute('fill','#3c6284');
+  marker.appendChild(mpath); defs.appendChild(marker); svg.appendChild(defs);
+  var viewport=document.createElementNS(MG_NS,'g'); viewport.setAttribute('id','mg-viewport');
+  svg.appendChild(viewport);
+  canvas.appendChild(svg);
+  mg.svg=svg; mg.viewport=viewport;
+  wireMemoryGraphEvents();
+}
+
+function buildMemoryGraphElements(){
+  var edgesGroup=document.createElementNS(MG_NS,'g');
+  var edgeLabelsGroup=document.createElementNS(MG_NS,'g');
+  var nodesGroup=document.createElementNS(MG_NS,'g');
+  mg.viewport.appendChild(edgesGroup);
+  mg.viewport.appendChild(edgeLabelsGroup);
+  mg.viewport.appendChild(nodesGroup);
+
+  mg.edges.forEach(function(e){
+    var line=document.createElementNS(MG_NS,'line');
+    line.setAttribute('stroke','#3c6284'); line.setAttribute('stroke-width','1.4');
+    line.setAttribute('marker-end','url(#mg-arrow)');
+    edgesGroup.appendChild(line);
+    e.el=line;
+    var label=document.createElementNS(MG_NS,'text');
+    label.setAttribute('font-size','9'); label.setAttribute('fill','#9fb3c8'); label.setAttribute('text-anchor','middle');
+    label.style.opacity='0'; label.style.pointerEvents='none'; label.style.transition='opacity .12s';
+    label.textContent=e.relationType||'';
+    edgeLabelsGroup.appendChild(label);
+    e.labelEl=label;
+  });
+
+  mg.nodes.forEach(function(node){
+    var grp=document.createElementNS(MG_NS,'g');
+    grp.style.cursor='pointer';
+    var circle=document.createElementNS(MG_NS,'circle');
+    circle.setAttribute('r','15'); circle.setAttribute('fill',node.color);
+    circle.setAttribute('stroke','#0b0f14'); circle.setAttribute('stroke-width','2');
+    var text=document.createElementNS(MG_NS,'text');
+    text.setAttribute('font-size','10.5'); text.setAttribute('fill','#eef6ff'); text.setAttribute('text-anchor','middle');
+    text.setAttribute('y','28'); text.textContent=node.name;
+    grp.appendChild(circle); grp.appendChild(text);
+    nodesGroup.appendChild(grp);
+    node.el=grp; node.circleEl=circle;
+    grp.addEventListener('mousedown', function(ev){ mgStartNodeDrag(ev,node); });
+    grp.addEventListener('mouseenter', function(){ mgShowEdgeLabels(node.id,true); });
+    grp.addEventListener('mouseleave', function(){ mgShowEdgeLabels(node.id,false); });
+  });
+  mgUpdatePositions();
+}
+
+function mgUpdatePositions(){
+  mg.nodes.forEach(function(node){
+    node.el.setAttribute('transform','translate('+node.x.toFixed(1)+','+node.y.toFixed(1)+')');
+  });
+  mg.edges.forEach(function(e){
+    var a=mg.byId[e.from], b=mg.byId[e.to];
+    if(!a||!b) return;
+    var dx=b.x-a.x, dy=b.y-a.y, dist=Math.sqrt(dx*dx+dy*dy)||1;
+    var r=15;
+    var x1=a.x+(dx/dist)*r, y1=a.y+(dy/dist)*r;
+    var x2=b.x-(dx/dist)*(r+3), y2=b.y-(dy/dist)*(r+3);
+    e.el.setAttribute('x1',x1.toFixed(1)); e.el.setAttribute('y1',y1.toFixed(1));
+    e.el.setAttribute('x2',x2.toFixed(1)); e.el.setAttribute('y2',y2.toFixed(1));
+    e.labelEl.setAttribute('x',((a.x+b.x)/2).toFixed(1));
+    e.labelEl.setAttribute('y',((a.y+b.y)/2-4).toFixed(1));
+  });
+}
+function mgShowEdgeLabels(nodeId,show){
+  mg.edges.forEach(function(e){ if(e.from===nodeId||e.to===nodeId) e.labelEl.style.opacity=show?'1':'0'; });
+}
+function applyMgTransform(){
+  mg.viewport.setAttribute('transform','translate('+mg.tx+','+mg.ty+') scale('+mg.k+')');
+}
+function mgClientToWorld(clientX,clientY){
+  var rect=mg.svg.getBoundingClientRect();
+  var sx=mg.w/rect.width, sy=mg.h/rect.height;
+  var vx=(clientX-rect.left)*sx, vy=(clientY-rect.top)*sy;
+  return {vx:vx,vy:vy,wx:(vx-mg.tx)/mg.k,wy:(vy-mg.ty)/mg.k,sx:sx,sy:sy};
+}
+
+function wireMemoryGraphEvents(){
+  mg.svg.addEventListener('wheel', function(ev){
+    ev.preventDefault();
+    var p=mgClientToWorld(ev.clientX,ev.clientY);
+    var factor=ev.deltaY<0?1.12:0.89;
+    var newK=Math.max(0.2,Math.min(4,mg.k*factor));
+    mg.tx=p.vx-p.wx*newK; mg.ty=p.vy-p.wy*newK; mg.k=newK;
+    applyMgTransform();
+  }, {passive:false});
+  mg.svg.addEventListener('mousedown', function(ev){
+    if(ev.target!==mg.svg && ev.target!==mg.viewport) return;
+    mgStartPan(ev);
+  });
+}
+
+function mgStartNodeDrag(ev,node){
+  ev.stopPropagation(); ev.preventDefault();
+  mg.dragNode=node; mg.moved=false;
+  var start=mgClientToWorld(ev.clientX,ev.clientY);
+  mg.dragOrigWX=start.wx; mg.dragOrigWY=start.wy;
+  mg.dragNodeStartX=node.x; mg.dragNodeStartY=node.y;
+  document.addEventListener('mousemove', mgOnNodeDragMove);
+  document.addEventListener('mouseup', mgOnNodeDragEnd);
+}
+function mgOnNodeDragMove(ev){
+  var node=mg.dragNode; if(!node) return;
+  var cur=mgClientToWorld(ev.clientX,ev.clientY);
+  var dx=cur.wx-mg.dragOrigWX, dy=cur.wy-mg.dragOrigWY;
+  if(Math.abs(dx*mg.k)>4||Math.abs(dy*mg.k)>4) mg.moved=true;
+  node.x=mg.dragNodeStartX+dx; node.y=mg.dragNodeStartY+dy;
+  mgUpdatePositions();
+}
+function mgOnNodeDragEnd(){
+  document.removeEventListener('mousemove', mgOnNodeDragMove);
+  document.removeEventListener('mouseup', mgOnNodeDragEnd);
+  var node=mg.dragNode; mg.dragNode=null;
+  if(node && !mg.moved) selectMemoryNode(node.id);
+  mg.moved=false;
+}
+function mgStartPan(ev){
+  mg.panning=true; mg.panMoved=false;
+  mg.panStartClientX=ev.clientX; mg.panStartClientY=ev.clientY;
+  mg.panStartTx=mg.tx; mg.panStartTy=mg.ty;
+  mg.svg.style.cursor='grabbing';
+  document.addEventListener('mousemove', mgOnPanMove);
+  document.addEventListener('mouseup', mgOnPanEnd);
+}
+function mgOnPanMove(ev){
+  if(!mg.panning) return;
+  var rect=mg.svg.getBoundingClientRect();
+  var sx=mg.w/rect.width, sy=mg.h/rect.height;
+  var dx=(ev.clientX-mg.panStartClientX)*sx, dy=(ev.clientY-mg.panStartClientY)*sy;
+  if(Math.abs(dx)>4||Math.abs(dy)>4) mg.panMoved=true;
+  mg.tx=mg.panStartTx+dx; mg.ty=mg.panStartTy+dy;
+  applyMgTransform();
+}
+function mgOnPanEnd(){
+  mg.panning=false;
+  if(mg.svg) mg.svg.style.cursor='grab';
+  document.removeEventListener('mousemove', mgOnPanMove);
+  document.removeEventListener('mouseup', mgOnPanEnd);
+}
+
+function selectMemoryNode(id){
+  var node=mg.byId[id]; if(!node) return;
+  mg.selected=id;
+  mg.nodes.forEach(function(n){
+    n.circleEl.setAttribute('stroke', n.id===id?'#4fd8c4':'#0b0f14');
+    n.circleEl.setAttribute('stroke-width', n.id===id?'3':'2');
+  });
+  renderMemoryDetail(id);
+  mg.tx=mg.w/2-node.x*mg.k; mg.ty=mg.h/2-node.y*mg.k;
+  applyMgTransform();
+}
+
+// Connections are addressed by index into mgDetailConns, never by
+// interpolating the raw entity-name id into an onclick attribute string —
+// same quoting-hazard-avoidance convention as modelsCache elsewhere in this file.
+var mgDetailConns=[];
+function renderMemoryDetail(id){
+  var node=mg.byId[id];
+  var panel=document.getElementById('mg-detail');
+  if(!node){ panel.innerHTML='<div class="mut">Click a node to see its details.</div>'; return; }
+  mgDetailConns=mg.edges.filter(function(e){ return e.from===id||e.to===id; });
+  var connHtml=mgDetailConns.length?mgDetailConns.map(function(e,i){
+    var otherId=e.from===id?e.to:e.from;
+    var other=mg.byId[otherId];
+    var arrow=e.from===id?'\\u2192':'\\u2190';
+    return '<button class="mgraph-conn-btn" onclick="selectMemoryConn('+i+')">'+arrow+' '+esc(e.relationType||'related')+' '+arrow+'&nbsp;&nbsp;<b>'+esc(other?other.name:otherId)+'</b></button>';
+  }).join(''):'<div class="mut">No relations recorded.</div>';
+  panel.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px">'+
+      '<h3 style="margin:0 0 6px;font-size:1rem">'+esc(node.name)+'</h3>'+
+      '<button onclick="deselectMemoryNode()" style="padding:2px 8px">&times;</button>'+
+    '</div>'+
+    '<div class="badge" style="background:'+node.color+'2a;color:'+node.color+';margin:0 0 10px">'+esc(node.entityType)+'</div>'+
+    '<div class="mut" style="margin:8px 0 4px;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Observations ('+node.observations.length+')</div>'+
+    '<div style="max-height:240px;overflow:auto;margin-bottom:12px">'+
+      (node.observations.length?node.observations.map(function(o){ return '<div class="mgraph-obs">'+esc(o)+'</div>'; }).join(''):'<div class="mut">none</div>')+
+    '</div>'+
+    '<div class="mut" style="margin:8px 0 4px;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Connections ('+mgDetailConns.length+')</div>'+
+    connHtml;
+}
+function deselectMemoryNode(){
+  mg.selected=null;
+  mg.nodes.forEach(function(n){ n.circleEl.setAttribute('stroke','#0b0f14'); n.circleEl.setAttribute('stroke-width','2'); });
+  document.getElementById('mg-detail').innerHTML='<div class="mut">Click a node to see its details.</div>';
+}
+function selectMemoryConn(i){
+  var e=mgDetailConns[i]; if(!e) return;
+  var otherId=(e.from===mg.selected)?e.to:e.from;
+  selectMemoryNode(otherId);
+}
+
 // ── master poll ──
 async function refreshStatus(){
   try{
@@ -1241,9 +1589,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/memory-graph') {
-      const { entities, relationCount } = parseMemoryFile();
+      const { entities, relations, relationCount } = parseMemoryFile();
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ entities, relationCount, tripwire: MEMORY_ENTITY_TRIPWIRE }));
+      res.end(JSON.stringify({ entities, relations, relationCount, tripwire: MEMORY_ENTITY_TRIPWIRE }));
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/logtail') {

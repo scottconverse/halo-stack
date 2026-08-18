@@ -14,10 +14,13 @@ llm-pi-ai:
         - id: qwen/qwen3.8-27b
           name: Qwen3.8 27B Q5 — daily brain
           contextWindow: 65536
-          # 24576: creator-mode builds emit full plugin source in one tool
-          # call (v3 of the memory-graph plugin capped at 16384 mid-define);
-          # 8192 and 16384 both proved too small for one-shot plugin authorship
-          maxTokens: 24576
+          # 49152: length cap only — zero speed/memory cost. Effective limit
+          # is always min(cap, room left in the 65,536 context window), so
+          # this setting means "config is never the limit; the window is."
+          # History: 8192/16384/24576 all truncated creator-mode plugin
+          # emits mid-source (2026-08-18). Only residual purpose of a cap:
+          # circuit-breaker on a pathological generation loop.
+          maxTokens: 49152
           input: [ text, image ]
           reasoningEfforts:
             low: low

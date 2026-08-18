@@ -555,7 +555,7 @@ is a hidden process; it dies with logoff/reboot, or leave it running — it idle
 
 ## Mission Control (the operator console)
 
-`http://127.0.0.1:3090` — five tabs behind a master alarm strip (**HARNESS ·
+`http://127.0.0.1:3090` — six tabs behind a master alarm strip (**HARNESS ·
 MODELS · MEMORY · DISK · STREAM**). All green + "All systems nominal" means
 stop reading; any light names its cause and jumps to the right tab.
 
@@ -576,6 +576,13 @@ stop reading; any light names its cause and jumps to the right tab.
   (mined from the harness's own package metadata on disk, not invented),
   live search that matches descriptions too, and abnormal rows sorted to
   the top in red.
+- **Memory** — the knowledge graph as an actual graph: force-directed
+  layout, nodes colored by entity type with a legend, relation edges,
+  wheel-zoom at the cursor, drag-pan, draggable nodes, click a node for
+  its observations and clickable connections, Refresh re-reads
+  `memory.json` live. (Origin story: first prototyped by the local brain
+  itself as a Creator-mode cockpit plugin —
+  `docs/experiments/creator-mode-2026-08-18.md`.)
 - **System** — memory/disk gauges, full version + engine list, a
   **Validate config** button (runs the harness's own `--dump-config` and
   reports unmatched patch rows), the memory-graph browser with the

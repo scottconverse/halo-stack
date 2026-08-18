@@ -11,6 +11,30 @@ install/wire, Phase 2 baseline/bench, Phase 3 reach, Phase 4 harden,
 This entry summarizes what the stack *is* at this version, not a
 chronological diff.
 
+## [Unreleased]
+
+### Added
+- **Mission Control "Memory" tab** — interactive force-directed knowledge
+  graph (cursor-anchored wheel-zoom, drag-pan, draggable nodes, click-node
+  detail panel with observations + clickable connections, live refresh);
+  `/api/memory-graph` now returns relation edges (backward compatible).
+  First prototyped live by the local brain as a Creator-mode cockpit
+  plugin — full experiment record with the good/bad/ugly in
+  `docs/experiments/creator-mode-2026-08-18.md`.
+- Strix Halo deep-dive research report
+  (`docs/research/strix-halo-deep-dive-2026-08-18.md`) + refined
+  delta-scan watches (MTP parallel=1 finding, NPU-hybrid SKU correction,
+  ThinkingCap sighting, engine-regression re-bench rule).
+
+### Changed
+- Brain `maxTokens` 8192 → 49152 ("config is never the limit; the context
+  window is") after reply caps repeatedly truncated creator-mode plugin
+  emissions.
+- Composer "High" reasoning effort maps to medium (xhigh opt-in only).
+- Bench overlays isolate memory writes to a scratch graph; deploys are
+  transactional with drift-guard; hourly memory-graph snapshots
+  (scheduled task "HALO Memory Snapshot").
+
 ## [0.1.0] - 2026-08-18
 
 First versioned release. Everything below is running, measured, and
