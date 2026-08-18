@@ -1,6 +1,11 @@
 # halo-stack
 
-The complete, reproducible configuration of the HALO local AI stack:
+**A tested, reproducible local-AI workstation distribution built on DeepSeek
+Harness** — the appliance layer, not another harness: hardware tuning, boot
+orchestration, model lifecycle, Windows fixes, benchmarking, privacy
+validation, and upgrade discipline on top of DeepSeek's runtime.
+
+The complete configuration:
 **DeepSeek Harness (`dsh` pinned `0.1.0-rc.7`) + LM Studio (Qwen3.8-27B Q5 brain,
 Qwen3 Coder 30B MoE on-demand worker) + Mission Control + OpenCode config**,
 as designed, benchmarked, and documented on 2026-08-17.

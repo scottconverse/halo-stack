@@ -30,12 +30,24 @@ dsh-v0.1.0-rc.7 tree. The claim did **not** fully survive. Verdicts:
    Rule going forward: any credential the model should NOT be able to read goes
    in `.credentials.yaml` via the Settings UI; `.env` is only for keys the model
    is meant to use.
-4. **Mission Control refactor** (tracked, not yet done): keep the independent
-   process (its watchdog role requires living outside dsh), but replace the
-   filesystem session-scraping with the shipped `apiproxy` RPCs when dsh is up,
-   falling back to scrape only when dsh is down. Until then, MC's session panel
-   is best-effort. The build log's "duplicates nothing" claim is retracted;
-   corrected here.
+4. **Mission Control refactor** (DONE, same night): MC now consumes dsh's
+   shipped `apiproxy` RPCs (`workspace.list` + `session.list` via
+   `POST /api/<method>` with the client-request envelope) when the cockpit is
+   up — gaining real session titles, presets, running state, turn counts, and
+   correct workspace names — and falls back to the directory scrape only when
+   dsh is down (its watchdog role). The UI badges which source is live. The
+   build log's "duplicates nothing" claim is retracted; corrected here.
+
+## Third audit (doc-level, independent) — adopted findings
+A third review reached the same verdicts and added two accepted points:
+- **Positioning**: halo-stack is not a harness and shouldn't read like one —
+  it is *"a tested, reproducible local-AI workstation distribution built on
+  DeepSeek Harness"*: the appliance layer (hardware tuning, boot orchestration,
+  model lifecycle, Windows fixes, benchmarking, privacy validation, upgrade
+  discipline) on top of DeepSeek's runtime. README updated accordingly.
+- **Memory reclassified**: DSH's docs now list `@modelcontextprotocol/server-memory`
+  as an official third-party interoperability example — so our memory choice is
+  neither duplicated code nor a novel integration; it's the sanctioned pattern.
 
 ## Method note
 The refuted claim was originally self-graded by the builder. This audit exists

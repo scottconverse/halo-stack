@@ -33,7 +33,44 @@ async function lmsPs() {
   } catch { return null; }
 }
 
-function listSessions(limit = 8) {
+// DSH state comes from DSH's own apiproxy RPCs (post-audit boundary fix,
+// 2026-08-17): POST /api/<method> with a client-request envelope. The disk
+// scrape below survives ONLY as the fallback for when dsh itself is down.
+async function dshRpc(method, payload = {}) {
+  const res = await fetch(`http://127.0.0.1:3080/api/${method}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'client-request', rpcId: `mc-${Date.now()}`, method, payload }),
+    signal: AbortSignal.timeout(3000),
+  });
+  const msg = await res.json();
+  if (!msg?.result?.ok) throw new Error(`${method}: ${msg?.result?.error?.code || res.status}`);
+  return msg.result.value;
+}
+
+async function listSessionsApi(limit = 8) {
+  const [ws, sess] = await Promise.all([dshRpc('workspace.list'), dshRpc('session.list')]);
+  const wsTitle = new Map(ws.items.map(w => [w.workspaceId, w.title || w.path]));
+  const wsOfSession = new Map();
+  for (const w of ws.items) for (const id of (w.sessionIds || [])) wsOfSession.set(id, w.workspaceId);
+  const archived = new Set(ws.archivedSessionIds || []);
+  return sess.items
+    .filter(s => !s.blank && !archived.has(s.sessionId))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, limit)
+    .map(s => ({
+      workspace: wsTitle.get(wsOfSession.get(s.sessionId)) || s.cwd || 'Ungrouped',
+      id: s.sessionId.replace(/^session-/, '').slice(0, 8),
+      title: s.projections?.values?.title || null,
+      mtime: s.updatedAt || 0,
+      running: !!s.running,
+      preset: s.agentPreset || '',
+      turns: s.projections?.values?.sessionStats?.turns ?? null,
+    }));
+}
+
+// Fallback only — dsh down means no API; a rough directory listing beats nothing.
+function listSessionsScrape(limit = 8) {
   const out = [];
   try {
     for (const proj of fs.readdirSync(DSH_SESSIONS)) {
@@ -45,10 +82,9 @@ function listSessions(limit = 8) {
           const log = fs.readdirSync(sessDir).find(f => f.startsWith('session.jsonl'));
           if (!log) continue;
           const st = fs.statSync(path.join(sessDir, log));
-          // projectKey is an escaped path; rough human form for display only.
           const wsRaw = proj.replace(/^-+|-+$/g, '');
           const ws = wsRaw.replace(/^C-/, 'C:\\').replace(/-/g, '\\');
-          out.push({ workspace: ws, id: sess.replace(/^session-/, '').slice(0, 8), mtime: st.mtimeMs, sizeKB: Math.round(st.size / 1024) });
+          out.push({ workspace: ws, id: sess.replace(/^session-/, '').slice(0, 8), title: null, mtime: st.mtimeMs, running: false, preset: '', turns: null });
         } catch { /* skip unreadable */ }
       }
     }
@@ -64,6 +100,13 @@ function memoryCount() {
 
 async function status() {
   const [dshUp, lmUp, models] = await Promise.all([tcpCheck(3080), tcpCheck(1234), lmsPs()]);
+  let sessions, sessionsSource;
+  if (dshUp) {
+    try { sessions = await listSessionsApi(); sessionsSource = 'dsh api'; }
+    catch { sessions = listSessionsScrape(); sessionsSource = 'disk scan (api failed)'; }
+  } else {
+    sessions = listSessionsScrape(); sessionsSource = 'disk scan (dsh down)';
+  }
   return {
     time: new Date().toISOString(),
     services: {
@@ -79,7 +122,7 @@ async function status() {
       queued: m.queued,
       gb: Math.round((m.sizeBytes || 0) / 1e9 * 10) / 10,
     })),
-    sessions: listSessions(),
+    sessions, sessionsSource,
     memoryEntities: memoryCount(),
     freeRamGB: Math.round(os.freemem() / 1e9 * 10) / 10,
   };
@@ -119,7 +162,7 @@ button:hover{background:#164058}a{color:var(--teal)}
 <button onclick="act('load-q5')">Load Brain (Q5)</button><button onclick="act('load-worker')">Load Worker (MoE)</button><br>
 <button onclick="act('unload-worker')">Unload Worker</button><button onclick="act('unload-all')">Unload All</button>
 <div id="msg"></div></div>
-<div class="card"><h2>Recent sessions</h2><div id="sessions" class="mono"></div></div>
+<div class="card"><h2>Recent sessions <span id="ssrc" class="mut"></span></h2><div id="sessions" class="mono"></div></div>
 <div class="card"><h2>System</h2><div id="system"></div></div>
 </div>
 <script>
@@ -133,7 +176,8 @@ async function refresh(){try{
   const svc=[['Harness cockpit (:3080)',s.services.cockpit],['LM Studio API (:1234)',s.services.lmstudio],['lms CLI',s.services.lmsCli]];
   document.getElementById('services').innerHTML=svc.map(([n,up])=>'<div class="row"><span><span class="dot '+(up?'up':'down')+'"></span>'+n+'</span><span class="k">'+(up?'up':'down')+'</span></div>').join('');
   document.getElementById('models').innerHTML=s.models.length?s.models.map(m=>'<div class="row"><span><span class="dot '+(m.status==='idle'?'up':'busy')+'"></span>'+esc(m.identifier)+'</span><span class="k">'+esc(m.quant)+' · '+(m.context/1024|0)+'K · '+m.gb+' GB · '+esc(m.status)+(m.queued?' · queue '+m.queued:'')+'</span></div>').join(''):'<div class="mut">no models loaded</div>';
-  document.getElementById('sessions').innerHTML=s.sessions.length?s.sessions.map(x=>'<div class="row"><span>'+esc(x.workspace)+'</span><span class="k">'+esc(x.id)+' · '+x.sizeKB+' KB · '+new Date(x.mtime).toLocaleTimeString()+'</span></div>').join(''):'<div class="mut">none</div>';
+  document.getElementById('ssrc').textContent='('+(s.sessionsSource||'')+')';
+  document.getElementById('sessions').innerHTML=s.sessions.length?s.sessions.map(x=>'<div class="row"><span><span class="dot '+(x.running?'busy':'up')+'"></span>'+esc(x.title||x.id)+(x.preset?' <span class="mut">['+esc(x.preset)+']</span>':'')+'</span><span class="k">'+esc(x.workspace)+(x.turns!=null?' · '+x.turns+' turns':'')+' · '+new Date(x.mtime).toLocaleTimeString()+'</span></div>').join(''):'<div class="mut">none</div>';
   document.getElementById('system').innerHTML='<div class="row"><span class="k">Free RAM</span><span>'+s.freeRamGB+' GB</span></div><div class="row"><span class="k">Memory entities</span><span>'+s.memoryEntities+'</span></div><div class="row"><span class="k">Harness pin</span><span class="mono">dsh 0.1.0-rc.7</span></div>';
 }catch(e){document.getElementById('stamp').textContent='status fetch failed'}}
 refresh();setInterval(refresh,5000);
