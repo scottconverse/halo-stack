@@ -1,0 +1,170 @@
+Transcript
+
+Search transcript
+Search transcript
+
+0:011 secondwhen 3.8 27 billion is out. Okay, this is the model that I was waiting for.
+0:077 secondsI've been using the previous version, the 3.6 27 billion for quite a while and it's become my daily driver. I do 80% of
+0:1616 secondsthe work with that model. I like it a lot. I bought a new computer just to run that model. I now run it on the 5090 and
+0:2424 secondsit's performing amazing. So you can imagine how much I was waiting for this new version and unfortunately I have
+0:3333 secondsmixed feeling about it. Now I want to explain because this is really important. There is something extremely important to understand but also I have an insane good news about this model.
+0:4545 secondsThis is what Quen released and this is the reason why a lot of people are comparing it to Obus 4.6. I personally I'm not much interested in this model.
+0:5555 secondsI'm more interested to understand what I'm gaining from what I had before to what I can run today. And I can see that
+1:031 minute, 3 secondsin some scenario the gap is not that big. But other scenarios like here aentic coding the gap is huge from 13.3
+1:121 minute, 12 secondsto 42.2 is massive and software engineering from 49.3 to 79. This is
+1:191 minute, 19 secondsanother massive step forward on frontier agenting task from 10.6 to 20. This is
+1:271 minute, 27 seconds100% improvement. The gap sometimes are pretty noticeable. So why I felt this
+1:351 minute, 35 secondsmixed feeling when I I tested myself because I tested the Quen 3.6 27 billion
+1:441 minute, 44 secondsQ6 with the Quen 3.8 8 27 billion Q5. In
+1:501 minute, 50 secondsmy test bug hunting, the Q6 found one more bug than the Q5, even though the Q5
+1:571 minute, 57 secondswas the newer version. So, I stopped the test and I said, "Okay, this is uh this is disappointing first, but let's
+2:052 minutes, 5 secondscompare them with the same quantization." So, I also installed the Quen 3.8 to 27 billion Q6. then I could
+2:122 minutes, 12 secondssee the difference, but the difference was still not that big as much as I was hoping for. So there is probably, it's
+2:202 minutes, 20 secondshard to tell, but let's say a 30% improvement, which is noticeable, but not another level. So I was expecting
+2:282 minutes, 28 secondsmuch more. This is because Luna itself could do such a great job when improving
+2:362 minutes, 36 secondsreasoning. So here is GPT 5.6 Luna, no reasoning 27. When we start increase
+2:432 minutes, 43 secondsreasoning go to 34 then 39 then
+2:502 minutes, 50 seconds47 and then GP 5.6 Luna max 52. The jump is insane is more than double the capability.
+3:003 minutesSo let's look at when 3.6 27 billion no reasoning 31. When does reasoning go to
+3:083 minutes, 8 seconds38? I was expecting okay the new model is going to be better as a model but plus then going to increase reasoning so
+3:153 minutes, 15 secondsit should push us towards this kind of level we are probably in the 40 but I was hoping to get actually up to in the
+3:243 minutes, 24 seconds50s that is reality considering that when no reasoning 31 and Luna no
+3:303 minutes, 30 secondsreasoning is 27 so potentially we could have done much more than 50 and reach
+3:383 minutes, 38 secondsyou know this kind of a level, the DeepSc version 4 Pro, that would be amazing. The GLM 5.2 Max. Okay, that
+3:473 minutes, 47 secondswould be an amazing achievement, but we didn't. So, probably I was expecting too much. But let me tell you the good news
+3:563 minutes, 56 secondshere. The good news is this model is capable. But
+4:044 minutes, 4 secondsintelligence is not just about the model is the harness around it. Before I explain why I'm talking about harness
+4:134 minutes, 13 secondsnow because I found the killer combo between this model and a harness. Until now I was using Hermes and open code.
+4:244 minutes, 24 secondsAnd while Hermes I find it that is a fantastic system recently when they start pushing their
+4:334 minutes, 33 secondsown subscription I felt like yeah that is not cool anymore I felt like a client
+4:404 minutes, 40 secondsI'm a guest within their system and this is the reason why I'm building with my community Resonant OS so we can co-own
+4:484 minutes, 48 secondsit and it's ours. The moment they started pushing that subscription, the moment that people are starting asking
+4:554 minutes, 55 secondsme is do I need to subscribe to use Hermes, I could see that Hermes just
+5:025 minutes, 2 secondstook the wrong path. Okay. And therefore I was already open with the idea I need to look to something different with
+5:115 minutes, 11 secondsRontos. I was thinking okay for us everything needs to be an adon. Okay, all the elements need to be possible for
+5:195 minutes, 19 secondsthe community to add to this system. So they can customize, they can change it.
+5:235 minutes, 23 secondsThey can replace part, they can replace the memory, they can replace the main agent, they can replace all those parts, but at least we have a system that we
+5:315 minutes, 31 secondscan work together and build it and customize together. So at one point I came across randomly to this new harness
+5:405 minutes, 40 secondsthat came out recently. I think less than a week ago, DeepS released Deepseek
+5:475 minutes, 47 secondsharness. Now, I believe that this is the best combo for Quen 3.8 27 billion. I
+5:575 minutes, 57 secondsstarted using this harness. I'm going to explain a little bit even though I will probably need to do a dedicated video to this harness because it does something
+6:046 minutes, 4 secondsthat no other harnesses do. What happened? I start using it together with this uh new version of Quen and
+6:126 minutes, 12 secondseverything I wanted to build so far it built. So in the past I used to use Quen
+6:186 minutes, 18 seconds3.6 27 billion let's say 80% of the time. Sometimes it would find a problem that was not solvable. I had to change
+6:276 minutes, 27 secondsmodel and use one of those frontier model. Now with this deepseek harness and the new 3.8 8 27 billion. I never
+6:376 minutes, 37 secondshad a problem to swap to a different model. So what is happening here? When I went to this website, I read everything
+6:456 minutes, 45 secondsis a plug-in. So in my world, everything is an addon. For them, everything is a plug-in. It resonated and say, I need to
+6:536 minutes, 53 secondslook into this thing. I was coming from uh not totally sure about Hermes anymore. We are still building with our
+7:027 minutes, 2 secondscommunity Reserant OS. I see this that says everything is a plug-in total alignment. I installed it. Actually, I
+7:107 minutes, 10 secondsdidn't even install. I asked Hermes to install it for me and configure it with the new model. And it's amazing. So now
+7:197 minutes, 19 secondsthis is how it looks like. Okay. And I can't show you while it's running because while it's running I can't
+7:277 minutes, 27 secondsrecord the screen because memory management of the file format that I'm uh recording. What I can tell you here
+7:357 minutes, 35 secondsis that it's just amazing. It's not a finished product. Okay. Okay. So they call it developer preview. So it's not
+7:447 minutes, 44 secondsfinished. It's there is a lot of things maybe are missing. Things are not perfect. So sometimes it doesn't do
+7:517 minutes, 51 secondscompaction in the right moment and therefore it's a kind of crash the system nothing serious because you just
+7:597 minutes, 59 secondssay resume working and it start working without any problems but nevertheless it's still a preview but what they did
+8:068 minutes, 6 secondsthey change how the contest window is managed. What is happening here it's unbelievable.
+8:148 minutes, 14 secondsThere is a lot of new elements inside.
+8:178 minutes, 17 secondsSo it takes track of everything that has been done and require for whatever
+8:248 minutes, 24 secondssystem that they use less context window. I can't explain because it's confusing to me. So I need to read understand it better. But what I know
+8:328 minutes, 32 secondsit's these 131,000 tokens that I have available for this model on my 5090.
+8:398 minutes, 39 secondsThey just last longer. The compaction is so much more solid. And this system is
+8:468 minutes, 46 secondsbeen chatting for so long, building for so long. That is incredible. So if you I don't know if you can see, but here it
+8:548 minutes, 54 secondshad an input of 38 million tokens, still going strong. What did I build with this? I built this the agumentor.
+9:069 minutes, 6 secondsThis is my agent. Okay, this is how I call my agent. This is part of Resonant OS is also included in resonant. Now I
+9:139 minutes, 13 secondsbuilt the agumental that is powered by this deepseek harness. What it does is uh it takes total control of the browser
+9:229 minutes, 22 secondsand and it just go around and click and do things for me. So what I ask here was
+9:289 minutes, 28 secondsto check out of my latest videos to see the comment and suggest a few videos
+9:369 minutes, 36 secondsidea. So that was a way to send these agents into the browser. click around and grab information.
+9:469 minutes, 46 secondsSo, here is what came out. It checked four, five different videos. He saw some of the comments and then come out with
+9:559 minutes, 55 secondssome ideas. Now, it doesn't matter the ideas because it's honestly I don't from what I see maybe are valuable, maybe
+10:0210 minutes, 2 secondsnot, but doesn't matter because it didn't have the instruction of what is this channel is about and so on. So, at the moment it doesn't have much context.
+10:1010 minutes, 10 secondsIt just went there and grabbed information. But what is important is what was capable of doing. I built the whole thing with this Quen 3.8.
+10:2110 minutes, 21 secondsIt works completely fine. Yeah, there is a little things that need to be improved. And the most important part, I
+10:2810 minutes, 28 secondsnever had the need to use a bigger model. Something that always happened before when was doing something as
+10:3610 minutes, 36 secondscomplex at this kind of tasks. So, we have another deepseek moment, but this time the deepseek moment is not on the
+10:4310 minutes, 43 secondsmodel, is on the harness and is done by deepseek. Now, I'm extremely curious to see what this harness can do even with a
+10:5210 minutes, 52 secondsmore powerful model. If you've been following this channel, you know that I'm really pro local AI and so on. um
+11:0011 minutesfor the AI sovereignty meaning you need to own the hardware and the infrastructure so you can trust and
+11:0711 minutes, 7 secondscontrol everything. This is the journey but it's not first of it's not for everybody but also is it's a journey is not a non-off what I can see with this
+11:1611 minutes, 16 secondsdeepseek harness that the journey is getting better and better because now we have this harness that has MIT license
+11:2411 minutes, 24 secondsmeaning you can use it in your project you can use it yourself implement change it do whatever and use for commercial so
+11:3311 minutes, 33 secondswhat I'm suggesting here if you are watching this video probably it's because you have access to this model.
+11:4011 minutes, 40 secondsBut even if you don't try this uh DeepS harness, if you're one of those lucky people that own a two DJX Spark or
+11:5011 minutes, 50 secondsequivalent, try DeepSk version 4 flash because can run on two of them with this
+11:5711 minutes, 57 secondsharness that probably they could work amazingly together. I'm at moment after a few months of of struggling with this
+12:0612 minutes, 6 secondsAI. I'm excited again. I think it's a similar moment of when open claw came out which was called
+12:1512 minutes, 15 secondsclawbot I think. Can't even remember anymore.
+12:1912 minutes, 19 secondsSo when it came out it just was a massive push forward because everybody finally had this agent that can do a lot
+12:2812 minutes, 28 secondstake control of your computer work for you and so on. So now I think what DeepSync did with their harness is a
+12:3612 minutes, 36 secondssimilar jump allows this model to do so much more which is incredible. I will need to test
+12:4412 minutes, 44 secondsthis for longer. Of course I can't say you know that is the final solution but at moment this is what I feel. I feel
+12:5212 minutes, 52 secondslike I never needed a more powerful model than this when I use this harness.
+12:5912 minutes, 59 secondssomething that I can't say the same with Hermes or open code. I think it's a killer combo. I need to understand this
+13:0813 minutes, 8 secondsdeepseek harness even more. At Monte is not fully finished the way it works.
+13:1413 minutes, 14 secondsIt's uh surprisingly well. So, if I were you, first of all, go to this dsec.com
+13:2113 minutes, 21 secondsharness and uh and read it through. Like I said, I will do a new video, but they're definitely managing the things
+13:2813 minutes, 28 secondsdifferently. And now what is possible to achieve with this harness and the quen 3.8 27 billion is impressive. This is
+13:3813 minutes, 38 secondsgoing to be my new way of working for now on I will need to migrate and learn how to do it from Hermes to this model.
+13:4813 minutes, 48 secondsAgain the good thing that is happening that is I basically already built this agent. This agent the augmentor. This
+13:5613 minutes, 56 secondscan be a an addon for resonant OS and again shows the importance of working in addons or plugins like they call it
+14:0614 minutes, 6 secondsbecause now it's easy to implement new things. And what I can't even believe is
+14:1314 minutes, 13 secondsthat I build this 100% with my local AI, not needing a more powerful system.
+14:2314 minutes, 23 secondsEverything that I ask to do has been done, not getting lost and so on. One thing that I want to say about DeepS
+14:3114 minutes, 31 secondsharness connected together with this quen 3.8 to 27 billion is they use a lot
+14:3814 minutes, 38 secondsof token. Okay, let's use a lot of toads. But the result is there. We know that the
+14:4614 minutes, 46 secondsdirection was increase the thinking time and you you will perform better. Here is happening and is incredible. Let's look
+14:5414 minutes, 54 secondsat the what kind of hardware you need to run this model. In theory, according to Quen, you can run it on 12 GB of RAM.
+15:0315 minutes, 3 secondsIdeally, a 48 GB of RAM. And I would agree on the 48 GB of RAM because what you gain is actually a larger contest
+15:1115 minutes, 11 secondswindow. I have the 32 GB of RAM. Okay. A Q6
+15:1615 minutes, 16 secondsand 25 GB. And look, I only lose 0.2%
+15:2315 minutes, 23 secondsfrom the Q8. So the compromise is pretty acceptable. With the Q5, you lose a little bit. You lose 1.4.
+15:3215 minutes, 32 secondsAt 1.4, for you say okay that is not much and I mean from this one but you lose a 1.6 six from the top is still not
+15:4215 minutes, 42 secondsthat much, but from my benchmark that I run earlier, the bug hunting, the Q6 could find one more bug than the Q5.
+15:5515 minutes, 55 secondsSo, it is a little bit, you know, annoying this thing. So, here's my suggestion. If you're looking for a
+16:0316 minutes, 3 secondsbigger contest window, Q5 is fine. If you need to do some specific work that is more advanced, of course, you need to
+16:1116 minutes, 11 secondsmove into the Q6. Ideally, if you have the 32 GB of RAM, I'm explaining this because it's important
+16:2016 minutes, 20 secondsto understand what are the limits. When you go into the 16 GB of RAM, you start to lose quite a bit. At 12 GB of RAM, you lose a lot.
+16:3216 minutes, 32 secondsSo while I never tried these two models, okay, I never tried them. I can't say how much you're losing from the model.
+16:4016 minutes, 40 secondsThis is something that you need to test yourself. But knowing that the minimum minimum requirement is 12, ideally you
+16:4716 minutes, 47 secondswant to be in the 24, 32, 48 if you can do it. So now another elements you need to consider is the side of the memory
+16:5616 minutes, 56 secondsthat is required to run this model. But the speed at which the model runs is connected to the bandwidth. So I just
+17:0617 minutes, 6 secondslisted here I use these perplexes to this research on the 32 GB of RAM and 24
+17:1217 minutes, 12 secondsGB of RAM. So here for the 32 GB of RAM the best one is the 5090. Okay. This has
+17:2017 minutes, 20 secondsa bandwidth that is insane. 1,792 GB per second. That means the this model
+17:2717 minutes, 27 secondsis working at around 100 110 token per second on my hardware. It's doing insanely well. So when you go on this
+17:3717 minutes, 37 secondsone, you can see that the AMD is doing 640. This is almost a third of the
+17:4517 minutes, 45 secondsspeed. So you have an idea of what you can expect. Now on the 24 GB of VRAM, we have a different kind of opportunity.
+17:5517 minutes, 55 seconds000 gigabyte per second which is pretty good. 3090 is the same. The good thing with 1390 that you can find them
+18:0318 minutes, 3 secondssecondhand much cheaper. This is the 390 idle. So the 39 normal 3090 is here
+18:0918 minutes, 9 secondswhich is basically not not a big of a difference. Okay, it doesn't really matter. But from AMD, we have this card
+18:1918 minutes, 19 secondswhich is still in commerce that you can buy and it's not as expensive as those 1490 and the speed is almost there. Now
+18:2918 minutes, 29 secondsthose are 24 GB of RAM. So if I were in Europe and if you can afford I mean two of these together they give you 48 GB of
+18:3818 minutes, 38 secondsRAM which again give us this 48 GB of RAM. I would not run the Q8. I would go
+18:4518 minutes, 45 secondsfor the Q6 but with a much bigger contest window. Have in mind that you on my 32 GB of RAM I can have 131,000 token
+18:5518 minutes, 55 secondscontest window with 48. You probably I guess you could have the the total 260
+19:0119 minutes, 1 secondsomething context window which is a nice plus. Remember Q8 is going to run slower
+19:0819 minutes, 8 secondsthan the Q6. The Q6 slower than Q5 and so on. bandwidth. It is something to consider at the moment. If you want to
+19:1619 minutes, 16 secondsbuy new, this is really good. If you're looking for secondhand, this is pretty good. One more thing, this model can run
+19:2319 minutes, 23 secondson a DGX Spark and it runs depending on the quantization at around 20 30 to per second. At 30 to per second, in reality,
+19:3219 minutes, 32 secondsyou have a system that works, is usable, and I will probably run it and test it on my GX10. This is the Asus version of
+19:4019 minutes, 40 secondsthe DJX Spark. It's 128 GB of RAM, so I can run it with really large context window with multiple instances. So, that
+19:4919 minutes, 49 secondswould be the advantage. Anyway, that is what I wanted to share for today. To recap, a model that is not as good as I
+19:5819 minutes, 58 secondswanted. It didn't do the jump that I was expecting and wanting. Probably we're going to see it when they release the version four of it. But combining this
+20:0720 minutes, 7 secondswith Deep Seek harness, I saw something that I never saw before. It's early days to say, but so far in the last 24 hours,
+20:1620 minutes, 16 secondsI use it a lot. And I never felt I needed to use a bigger model. Never
+20:2420 minutes, 24 secondsonce. [clears throat] That make me think that things are changing and local AI is gaining more
+20:3120 minutes, 31 secondsand more value every single day. If you're interested in this kind of content and you want to join our community, first like and subscribe. In
+20:4020 minutes, 40 secondsthe description, you find the link to our discord channel and there is a deep dive article. I will go deeper in
+20:4720 minutes, 47 secondseverything that I talk inside this uh video. I will add all the links that I discuss over here and if possible I will
+20:5520 minutes, 55 secondssee how it goes. But I might also share this augumentor powered by DS DSH. This
+21:0221 minutes, 2 secondsis an extension for the browser and by adding it you can have this sidecar
+21:1021 minutes, 10 secondswhich honestly is amazing. It is actually amazing. I say if I can because
+21:1721 minutes, 17 secondswhat is missing before I can share it is a way for you to add your own model. At
+21:2321 minutes, 23 secondsthe moment there's no a configuration system where you can add your API or logger model or something. Even though
+21:3121 minutes, 31 secondsthrough the code you could be able to ask to your agents to add the model. I want to make it through the interface so
+21:3921 minutes, 39 secondseverybody can just add their you know details and run it locally or for any other cloud provider. So if I can manage
+21:4821 minutes, 48 secondsto do this in time, I will link inside the Substack article the code for this
+21:5521 minutes, 55 secondsum agent. If not, will be shared in the in the near future. Thanks for staying until the end. Again, like and
+22:0322 minutes, 3 secondssubscribe, watch the next video, join the Discord, and uh ciao.
+

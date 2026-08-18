@@ -1,0 +1,10 @@
+# Bench overlay: Coder model + Code-mode tool presentation (run_code)
+- id: agent-default-model
+  config:
+    provider: lmstudio
+    model: qwen3-coder-30b-a3b-instruct
+- insert:
+    - id: bench-code-presentation
+      name: '@deepseek-ai/dsh-agent-tool-presentation'
+      config:
+        mode: code

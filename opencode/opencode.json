@@ -1,0 +1,203 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "opencode-claude-auth@latest",
+    "opencode-antigravity-auth@1.6.0"
+  ],
+  "model": "lmstudio/qwen/qwen3.8-27b",
+  "small_model": "opencode/nemotron-3.5-lightning-free",
+  "default_agent": "full-coding",
+  "tool_output": {
+    "max_lines": 800,
+    "max_bytes": 24000
+  },
+  "compaction": {
+    "auto": true,
+    "prune": false,
+    "reserved": 10000
+  },
+  "provider": {
+    "lmstudio": {
+      "name": "LM Studio (local)",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://127.0.0.1:1234/v1",
+        "apiKey": "lm-studio",
+        "timeout": false,
+        "headerTimeout": 300000,
+        "chunkTimeout": 300000
+      },
+      "models": {
+        "qwen/qwen3.8-27b": {
+          "name": "Qwen3.8 27B UD-Q5_K_XL — Local Daily Driver",
+          "attachment": true,
+          "reasoning": true,
+          "temperature": true,
+          "tool_call": true,
+          "interleaved": "reasoning_content",
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          },
+          "limit": {
+            "context": 65536,
+            "output": 8192
+          },
+          "options": {
+            "reasoningEffort": "medium"
+          },
+          "variants": {
+            "fast": {
+              "reasoningEffort": "low"
+            },
+            "balanced": {
+              "reasoningEffort": "medium"
+            },
+            "deep": {
+              "reasoningEffort": "xhigh"
+            }
+          }
+        },
+        "qwen/qwen3.6-35b-a3b": {
+          "name": "Qwen3.6 35B A3B",
+          "attachment": true,
+          "reasoning": true,
+          "temperature": true,
+          "tool_call": true,
+          "limit": {
+            "context": 32000,
+            "output": 4096
+          }
+        },
+        "qwen3-coder-30b-a3b-instruct": {
+          "name": "Qwen3 Coder 30B A3B Instruct",
+          "temperature": true,
+          "tool_call": true,
+          "limit": {
+            "context": 32000,
+            "output": 4096
+          }
+        },
+        "openai/gpt-oss-20b": {
+          "name": "GPT-OSS 20B",
+          "reasoning": true,
+          "temperature": true,
+          "tool_call": true,
+          "limit": {
+            "context": 32000,
+            "output": 8192
+          }
+        },
+        "gpt-oss-120b": {
+          "name": "GPT-OSS 120B",
+          "temperature": true,
+          "tool_call": true,
+          "limit": {
+            "context": 32000,
+            "output": 8192
+          }
+        },
+        "google/gemma-4-26b-a4b": {
+          "name": "Gemma 4 26B A4B",
+          "attachment": true,
+          "reasoning": true,
+          "temperature": true,
+          "tool_call": true,
+          "limit": {
+            "context": 32000,
+            "output": 4096
+          }
+        }
+      }
+    },
+    "anthropic": {
+      "name": "Anthropic",
+      "npm": "@ai-sdk/anthropic",
+      "options": {
+        "baseURL": "https://api.anthropic.com/v1"
+      },
+      "models": {
+        "claude-3-5-sonnet": {
+          "name": "Claude 3.5 Sonnet",
+          "limit": {"context": 200000, "output": 8192}
+        },
+        "claude-3-opus": {
+          "name": "Claude 3 Opus",
+          "limit": {"context": 200000, "output": 4096}
+        },
+        "claude-3-haiku": {
+          "name": "Claude 3 Haiku",
+          "limit": {"context": 200000, "output": 4096}
+        }
+      }
+    },
+    "google": {
+      "whitelist": [
+        "antigravity-gemini-3.1-pro",
+        "antigravity-gemini-3-flash",
+        "antigravity-claude-sonnet-4-6",
+        "antigravity-claude-opus-4-6-thinking",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview",
+        "gemini-3.1-pro-preview",
+        "gemini-3.1-pro-preview-customtools"
+      ],
+      "models": {
+        "antigravity-gemini-3.1-pro": {
+          "name": "Gemini 3.1 Pro (Antigravity)",
+          "limit": {"context": 1048576, "output": 65535},
+          "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]},
+          "variants": {
+            "low": {"thinkingLevel": "low"},
+            "high": {"thinkingLevel": "high"}
+          }
+        },
+        "antigravity-gemini-3-flash": {
+          "name": "Gemini 3 Flash (Antigravity)",
+          "limit": {"context": 1048576, "output": 65536},
+          "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]},
+          "variants": {
+            "minimal": {"thinkingLevel": "minimal"},
+            "low": {"thinkingLevel": "low"},
+            "medium": {"thinkingLevel": "medium"},
+            "high": {"thinkingLevel": "high"}
+          }
+        },
+        "antigravity-claude-sonnet-4-6": {
+          "name": "Claude Sonnet 4.6 (Antigravity)",
+          "limit": {"context": 200000, "output": 64000},
+          "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]}
+        },
+        "antigravity-claude-opus-4-6-thinking": {
+          "name": "Claude Opus 4.6 Thinking (Antigravity)",
+          "limit": {"context": 200000, "output": 64000},
+          "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]},
+          "variants": {
+            "low": {"thinkingConfig": {"thinkingBudget": 8192}},
+            "max": {"thinkingConfig": {"thinkingBudget": 32768}}
+          }
+        },
+        "gemini-2.5-flash": {
+          "name": "Gemini 2.5 Flash (Gemini CLI OAuth)",
+          "limit": {"context": 1048576, "output": 65536},
+          "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]}
+        },
+        "gemini-3-flash-preview": {
+          "name": "Gemini 3 Flash Preview (Gemini CLI OAuth)",
+          "limit": {"context": 1048576, "output": 65536},
+          "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]}
+        },
+        "gemini-3.1-pro-preview": {
+          "name": "Gemini 3.1 Pro Preview (Gemini CLI OAuth)",
+          "limit": {"context": 1048576, "output": 65535},
+          "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]}
+        },
+        "gemini-3.1-pro-preview-customtools": {
+          "name": "Gemini 3.1 Pro Preview Custom Tools (Gemini CLI OAuth)",
+          "limit": {"context": 1048576, "output": 65535},
+          "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]}
+        }
+      }
+    }
+  }
+}

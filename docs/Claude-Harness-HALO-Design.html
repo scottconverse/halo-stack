@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local AI System — Claude Plan</title>
+<style>
+:root{--bg:#0b0f14;--panel:#121a24;--panel2:#0e1620;--ink:#eef6ff;--muted:#9fb3c8;--line:#27405c;--teal:#4fd8c4;--blue:#6ea8ff;--green:#5fe39a;--amber:#ffc86b;--pink:#f08ec4;--red:#ff8080}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:linear-gradient(180deg,#080c11 0,#0c1420 50%,#090e15 100%);color:var(--ink);font:16px/1.6 Inter,Segoe UI,Arial,sans-serif}
+a{color:var(--teal)}code{font-family:Cascadia Code,Consolas,monospace;color:#dcebff;background:#0a1220;padding:.08rem .3rem;border-radius:4px;font-size:.92em}
+pre{background:#0a1220;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:.88rem;line-height:1.5}
+pre code{background:none;padding:0}
+.shell{max-width:1220px;margin:auto;padding:26px 30px 70px}
+.hero{padding:48px 44px;border:1px solid var(--line);border-radius:22px;background:radial-gradient(circle at 88% 10%,#14503f 0,transparent 36%),linear-gradient(135deg,#102030,#0b1520);box-shadow:0 22px 70px #0008}
+.kicker{text-transform:uppercase;letter-spacing:.2em;color:var(--teal);font-weight:800;font-size:.76rem}
+.hero h1{font-size:clamp(2.1rem,4.6vw,4rem);line-height:1.05;margin:.3rem 0 1rem;max-width:900px}
+.hero p{max-width:840px;color:#c3d4e6;font-size:1.13rem}
+.meta{display:flex;gap:11px;flex-wrap:wrap;margin-top:22px}
+.pill{border:1px solid #3c6284;background:#0f2233;border-radius:999px;padding:6px 12px;color:#cfe8ff;font-size:.88rem}
+nav{position:sticky;top:0;z-index:5;margin:20px 0;padding:12px 16px;background:#0a1420ea;backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:13px;display:flex;gap:15px;overflow:auto;white-space:nowrap}
+nav a{text-decoration:none;color:#b8cde0;font-size:.9rem}nav a:hover{color:#fff}
+section{margin:24px 0;padding:28px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(160deg,#101c2a,#0b1622)}
+h2{font-size:1.68rem;margin:0 0 12px}h3{color:#dcecff;margin-top:24px}
+p,li,td{color:#c2d2e2}.lead{font-size:1.07rem;color:#e8f3ff}
+.callout{padding:16px 19px;border-left:4px solid var(--teal);background:#0a1626;border-radius:7px;margin:14px 0}
+.callout.ok{border-left-color:var(--green)}.callout.key{border-left-color:var(--amber)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:15px}
+.card{padding:18px;border:1px solid #2a4362;border-radius:13px;background:#0b1726}
+.card h3{margin:0 0 8px;color:#fff}.card p{margin:.35rem 0}.metric{font-size:1.5rem;color:var(--green);font-weight:750}.small{font-size:.88rem;color:var(--muted)}
+.diagram{margin:18px 0;padding:16px;border:1px solid #274764;border-radius:15px;background:#071120;overflow:auto}
+.diagram svg{display:block;min-width:860px;width:100%;height:auto}
+.node{fill:#122740;stroke:#54809f;stroke-width:2}.node.primary{fill:#0f3446;stroke:#4fd8c4}.node.good{fill:#113a2e;stroke:#5fe39a}.node.alt{fill:#2e2440;stroke:#f08ec4}.node.warn{fill:#3b3020;stroke:#ffc86b}
+.svg-title{fill:#f2f8ff;font-weight:700;font-size:16px}.svg-copy{fill:#b6c9de;font-size:12.5px}
+.arrow{stroke:#6f9fc8;stroke-width:2.3;fill:none;marker-end:url(#ar)}
+table{width:100%;border-collapse:collapse;margin:14px 0;display:block;overflow:auto}
+th,td{text-align:left;padding:10px 13px;border-bottom:1px solid #28405d;vertical-align:top}th{color:#fff;background:#122238;white-space:nowrap}
+.steps{counter-reset:s;display:grid;gap:12px}
+.step{position:relative;padding:16px 17px 16px 64px;border:1px solid #2a4462;border-radius:12px;background:#0b1828}
+.step:before{counter-increment:s;content:counter(s);position:absolute;left:17px;top:14px;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--blue);font-weight:800;color:#08111d}
+.step b{color:#fff}
+.checklist{columns:2;column-gap:34px;padding-left:20px}.checklist li{break-inside:avoid;margin:.42rem 0}
+footer{text-align:center;color:#7d93ab;padding:28px}.sources li{word-break:break-word}
+@media(max-width:760px){.shell{padding:14px}.hero{padding:28px 20px}section{padding:20px}.checklist{columns:1}}
+@media print{body{background:#fff;color:#111}.hero,section,.card,.step,.diagram,pre{background:#fff;color:#111;box-shadow:none;border-color:#999}nav{display:none}p,li,td,.small{color:#222}.hero h1,h2,h3,.card h3,th{color:#111}.kicker,a{color:#0a6b5c}.pill{color:#111;background:#fff}.diagram svg{background:#071120}}
+</style>
+</head>
+<body>
+<main class="shell">
+
+<header class="hero">
+  <div class="kicker">Claude plan · source-level design</div>
+  <h1>Local AI System on HALO</h1>
+  <p>DeepSeek Harness pinned at <code>0.1.0-rc.7</code>, LM Studio serving a two-model brain/worker split, OpenCode untouched. Built from a three-agent dive into the actual harness source — not the marketing page.</p>
+  <div class="meta">
+    <span class="pill">Design: 17 Aug 2026</span><span class="pill">Windows 11 native</span><span class="pill">AMD Strix Halo</span>
+    <span class="pill">C:\ full access via env var</span><span class="pill">65,536-token brain</span><span class="pill">MoE fast worker</span>
+  </div>
+</header>
+
+<nav>
+  <a href="#decision">Decision</a><a href="#cache">Prefix-cache</a><a href="#arch">Architecture</a>
+  <a href="#facts">Source facts</a><a href="#models">Model layer</a><a href="#config">Config</a>
+  <a href="#routing">Routing</a><a href="#phases">Phases</a><a href="#accept">Acceptance</a><a href="#refs">References</a>
+</nav>
+
+<section id="decision">
+  <h2>1. Executive decision</h2>
+  <p class="lead">Install <strong>DeepSeek Harness (<code>dsh</code>) pinned at 0.1.0-rc.7</strong> as the cockpit. Keep <strong>OpenCode untouched</strong>. Run <strong>two local models</strong> on the one LM Studio server: the dense Q5 27B as the brain, the MoE coder as the fast worker for fan-out.</p>
+  <div class="callout ok"><strong>Verified now (via <code>lms ps --json</code>):</strong> Qwen3.8-27B UD-Q5_K_XL loaded under stable identity <code>qwen/qwen3.8-27b</code>, context 65,536, vision on, tool-trained, pinned by <code>Load-OpenCode-Qwen.mjs</code>. Q4_K_M retained as rollback.</div>
+  <p>Permissions are set by <strong>environment variable, not config patches</strong>: <code>DSH_PERMISSION_MODE=danger-full-access</code> flips the sandbox to full access and approval to <code>never</code> in one move (source-verified). The launcher starts from <code>C:\</code>, so the workspace root is the whole drive.</p>
+  <p>Nothing custom gets built until a shipped extension point fails. 400+ community plugins already exist under the <code>dsh-plugin</code> GitHub topic — search there first, always.</p>
+</section>
+
+<section id="cache">
+  <h2>2. Why this harness fits HALO — the prefix-cache insight</h2>
+  <p class="lead">The load-bearing finding of the source dive: <strong>every request the harness sends is a byte-exact extension of the previous one.</strong></p>
+  <p>The session log is append-only. Compaction, tool-result pruning, and plan-mode are all engineered as cache-safe surface replacements; the tool catalog never changes between modes (their own source comments say: for request-cache stability). Their CI fails if cache-read tokens drop to zero. Even the compaction summarizer is shaped as a prefix-extension of the already-warm request.</p>
+  <p>Your LM Studio config already runs <code>contextCheckpoints: 32</code> on a single slot. Stable prefixes + checkpoints = LM Studio almost never re-processes the prompt. Scoped correctly: prefix reuse eliminates repeated <em>prefill</em> (time-to-first-token on long sessions) and nothing else — decode stays bandwidth-bound, compaction still costs one planned re-prefill, and a changed prefix still invalidates the cache. On HALO (~256 GB/s vs a 5090's ~1,792 GB/s) repeated prefill is the most punishing cost, so removing it matters more here than on fast hardware. A real fit, not magic.</p>
+  <div class="diagram">
+    <svg viewBox="0 0 1000 240" role="img" aria-label="Prefix cache diagram: request N plus one extends request N byte-for-byte; compaction is one planned cache bust">
+      <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#6f9fc8"/></marker></defs>
+      <text class="svg-copy" x="60" y="34">Request N</text>
+      <rect x="60" y="42" width="120" height="34" rx="7" fill="#123a52" stroke="#4fd8c4"/><text class="svg-copy" x="120" y="64" text-anchor="middle">system</text>
+      <rect x="184" y="42" width="120" height="34" rx="7" fill="#123a52" stroke="#4fd8c4"/><text class="svg-copy" x="244" y="64" text-anchor="middle">tools</text>
+      <rect x="308" y="42" width="330" height="34" rx="7" fill="#123a52" stroke="#4fd8c4"/><text class="svg-copy" x="473" y="64" text-anchor="middle">history…</text>
+      <rect x="642" y="42" width="110" height="34" rx="7" fill="#1c3b2c" stroke="#5fe39a"/><text class="svg-copy" x="697" y="64" text-anchor="middle">new turn</text>
+      <text class="svg-copy" x="60" y="112">Request N+1</text>
+      <rect x="60" y="120" width="692" height="34" rx="7" fill="#0e2c40" stroke="#356a8a"/><text class="svg-copy" x="406" y="142" text-anchor="middle">identical bytes → KV-cache hit (zero re-processing)</text>
+      <rect x="756" y="120" width="88" height="34" rx="7" fill="#1c3b2c" stroke="#5fe39a"/><text class="svg-copy" x="800" y="142" text-anchor="middle">result</text>
+      <rect x="848" y="120" width="92" height="34" rx="7" fill="#1c3b2c" stroke="#5fe39a"/><text class="svg-copy" x="894" y="142" text-anchor="middle">next turn</text>
+      <path class="arrow" d="M406 76 L406 120"/>
+      <text class="svg-copy" x="60" y="196">After compaction (~every 52K tokens — one planned cache bust)</text>
+      <rect x="60" y="204" width="120" height="30" rx="7" fill="#123a52" stroke="#4fd8c4"/><text class="svg-copy" x="120" y="224" text-anchor="middle">system</text>
+      <rect x="184" y="204" width="120" height="30" rx="7" fill="#123a52" stroke="#4fd8c4"/><text class="svg-copy" x="244" y="224" text-anchor="middle">tools</text>
+      <rect x="308" y="204" width="200" height="30" rx="7" fill="#3b3020" stroke="#ffc86b"/><text class="svg-copy" x="408" y="224" text-anchor="middle">checkpoint summary</text>
+      <rect x="512" y="204" width="200" height="30" rx="7" fill="#123a52" stroke="#4fd8c4"/><text class="svg-copy" x="612" y="224" text-anchor="middle">retained tail (~10.5K)</text>
+      <rect x="716" y="204" width="110" height="30" rx="7" fill="#1c3b2c" stroke="#5fe39a"/><text class="svg-copy" x="771" y="224" text-anchor="middle">new turn</text>
+    </svg>
+  </div>
+</section>
+
+<section id="arch">
+  <h2>3. System architecture</h2>
+  <div class="diagram">
+    <svg viewBox="0 0 1120 700" role="img" aria-label="Architecture: Scott uses dsh Web UI and OpenCode, both hit LM Studio which serves the dense brain and the MoE worker; dsh branches into tools, compaction, MCP, and subagents">
+      <rect class="node primary" x="435" y="18" rx="14" width="250" height="68"/><text class="svg-title" x="560" y="46" text-anchor="middle">Scott</text><text class="svg-copy" x="560" y="68" text-anchor="middle">Directs; gates nothing by default</text>
+      <path class="arrow" d="M520 86 L330 140"/><path class="arrow" d="M600 86 L790 140"/>
+      <rect class="node primary" x="165" y="140" rx="14" width="320" height="92"/><text class="svg-title" x="325" y="172" text-anchor="middle">dsh Web UI · 127.0.0.1:3080</text><text class="svg-copy" x="325" y="194" text-anchor="middle">Cockpit · pinned 0.1.0-rc.7</text><text class="svg-copy" x="325" y="212" text-anchor="middle">standard preset first · danger-full-access</text>
+      <rect class="node alt" x="640" y="140" rx="14" width="310" height="92"/><text class="svg-title" x="795" y="172" text-anchor="middle">OpenCode</text><text class="svg-copy" x="795" y="194" text-anchor="middle">Untouched · independent fallback</text><text class="svg-copy" x="795" y="212" text-anchor="middle">Same Q5 identity, zero changes</text>
+      <path class="arrow" d="M325 232 L500 288"/><path class="arrow" d="M795 232 L620 288"/>
+      <rect class="node good" x="405" y="288" rx="14" width="310" height="92"/><text class="svg-title" x="560" y="320" text-anchor="middle">LM Studio API</text><text class="svg-copy" x="560" y="342" text-anchor="middle">127.0.0.1:1234/v1</text><text class="svg-copy" x="560" y="360" text-anchor="middle">two loaded models = two queues</text>
+      <path class="arrow" d="M505 380 L360 434"/><path class="arrow" d="M615 380 L760 434"/>
+      <rect class="node good" x="180" y="434" rx="14" width="345" height="86"/><text class="svg-title" x="352" y="464" text-anchor="middle">BRAIN · Qwen3.8-27B Q5 dense</text><text class="svg-copy" x="352" y="486" text-anchor="middle">65,536 ctx · vision · cockpit sessions</text><text class="svg-copy" x="352" y="504" text-anchor="middle">id: qwen/qwen3.8-27b (never renamed)</text>
+      <rect class="node warn" x="595" y="434" rx="14" width="345" height="86"/><text class="svg-title" x="767" y="464" text-anchor="middle">WORKER · Qwen3 Coder 30B MoE</text><text class="svg-copy" x="767" y="486" text-anchor="middle">32,768 ctx · on-demand · swap-free</text><text class="svg-copy" x="767" y="504" text-anchor="middle">subagents · workflows · Ralph rounds</text>
+      <path class="arrow" d="M165 186 L85 186 L85 574"/><path class="arrow" d="M85 574 L178 574"/>
+      <rect class="node" x="178" y="544" rx="12" width="210" height="64"/><text class="svg-title" x="283" y="570" text-anchor="middle">Windows tools</text><text class="svg-copy" x="283" y="590" text-anchor="middle">pwsh -NoProfile · fs · jobs · git</text>
+      <rect class="node" x="404" y="544" rx="12" width="210" height="64"/><text class="svg-title" x="509" y="570" text-anchor="middle">Context engine</text><text class="svg-copy" x="509" y="590" text-anchor="middle">compaction · pruner · JSONL log</text>
+      <rect class="node" x="630" y="544" rx="12" width="210" height="64"/><text class="svg-title" x="735" y="570" text-anchor="middle">MCP rows</text><text class="svg-copy" x="735" y="590" text-anchor="middle">BrowserMCP · memory server</text>
+      <rect class="node" x="856" y="544" rx="12" width="230" height="64"/><text class="svg-title" x="971" y="570" text-anchor="middle">Subagents</text><text class="svg-copy" x="971" y="590" text-anchor="middle">spawn · fork · codex · claude · ACP</text>
+      <path class="arrow" d="M388 576 L404 576"/><path class="arrow" d="M614 576 L630 576"/><path class="arrow" d="M840 576 L856 576"/>
+      <text class="svg-copy" x="560" y="668" text-anchor="middle">Harness owns orchestration · LM Studio owns inference · brain thinks while the worker sweats.</text>
+    </svg>
+  </div>
+</section>
+
+<section id="facts">
+  <h2>4. What the source dive established</h2>
+  <p class="small">Three parallel subagent sweeps over the reviewed clone at tag <code>dsh-v0.1.0-rc.7</code>: kernel/config, agent runtime, integrations. Facts below are from source, with file-level citations held in the session record.</p>
+  <div class="grid">
+    <article class="card"><h3>Install &amp; home</h3><p><code>npx @deepseek-ai/dsh@0.1.0-rc.7 web</code> → UI at <code>127.0.0.1:3080</code>. Node ≥22.19. Home: <code>C:\Users\scott\.dsh</code> holds profiles, sessions, skills, presets, credentials, home patch. <code>--host 0.0.0.0</code> is rejected — local only.</p></article>
+    <article class="card"><h3>Config layering</h3><p>bundles → profile patch → home <code>cordis.patch.yml</code> → <code>--patch</code> overlays. <strong>A patch replaces the row's whole config — no merge.</strong> Verify every change with <code>dsh web --dump-config</code>.</p></article>
+    <article class="card"><h3>Permissions</h3><p><code>DSH_PERMISSION_MODE=danger-full-access</code> sets sandbox <em>and</em> flips approval to <code>never</code>. Workspace root = launch dir. No rows patched. Runtime switch: <code>/permission</code>.</p></article>
+    <article class="card"><h3>Presets</h3><p><em>standard</em> (default, full tools) · <em>code</em> (same registry + <code>run_code</code>) · <em>minimal</em> · <em>cordis</em> (Creator — agent edits compositions). User presets: <code>.dsh\.agent-presets\</code>.</p></article>
+    <article class="card"><h3>Compaction</h3><p>Trigger 80% → <strong>52,428</strong> tokens at 65,536 ctx. Retain 16% → <strong>10,485</strong>. Summary cap 8,192. Tool results &gt;8,192 chars pruned first (head 4,096 / tail 1,024). Overflow auto-recovers. Ship defaults.</p></article>
+    <article class="card"><h3>Qwen dialect</h3><p>The generic provider has <code>compat.thinkingFormat: qwen</code> — a dedicated Qwen reasoning parser. Set it on the LM Studio route. Context budget for compaction comes from the declared <code>contextWindow</code>.</p></article>
+    <article class="card"><h3>Subagents</h3><p>Ship: in-process <em>spawn/fork</em> (model overridable), <em>codex</em>, <em>claude-code</em> (official SDK, native auth), generic <em>ACP</em> client, child-dsh. Plus workflows and the Ralph loop (explicit ask only).</p></article>
+    <article class="card"><h3>MCP &amp; browser</h3><p>One plugin row per MCP server (stdio/http), tools as <code>mcp__server__tool</code>. <strong>No browser control ships at all</strong> — BrowserMCP against signed-in Chrome is the right first add.</p></article>
+    <article class="card"><h3>Windows native</h3><p><code>pwsh -NoLogo -NoProfile -NonInteractive</code>, UTF-8 forced, PS7 first, <code>taskkill /T /F</code> tree kill, 64 MiB output spill. Native Win32 paths. No WSL anywhere.</p></article>
+  </div>
+</section>
+
+<section id="models">
+  <h2>5. Model layer — two models, not one</h2>
+  <div class="grid">
+    <article class="card"><div class="metric">Q5_K_XL</div><p>Brain — verified loaded, stable id <code>qwen/qwen3.8-27b</code></p></article>
+    <article class="card"><div class="metric">MoE A3B</div><p>Worker — on-demand; measured decode ≈ parity with Q5+MTP; swap-free fan-out</p></article>
+    <article class="card"><div class="metric">2 queues</div><p>Fan-out no longer waits behind the main turn</p></article>
+    <article class="card"><div class="metric">TTL</div><p>Worker loads on demand, unloads idle — bench decides residency</p></article>
+  </div>
+  <div class="callout key"><strong>Main break from the Codex paper:</strong> it shared one loaded model, so every subagent queued behind the cockpit. HALO's unified memory can hold a second model, so worker turns run swap-free — but both share one iGPU's bandwidth, so concurrency is contention, not a free second engine. Measured decode is near parity (Q5+MTP ≈ 28.3 tok/s vs A3B MoE ≈ 30–37 tok/s). The Phase 2 bench — Q5 alone · Coder alone · both idle · both generating · a full task on each — proves or kills this with data.</div>
+  <p><strong>Truth-source rule:</strong> what is loaded is decided by <code>lms ps --json</code> — never the REST catalog, never labels. The Q5 loader script stays authoritative; a second pinned loader (<code>Load-Worker-Coder.mjs</code>, TTL-based, unloads when idle) makes the worker deterministic.</p>
+</section>
+
+<section id="config">
+  <h2>6. Configuration — complete</h2>
+  <h3>Launcher — <code>Start-DSH.ps1</code></h3>
+  <pre><code>$env:DSH_PERMISSION_MODE = 'danger-full-access'
+node "$env:USERPROFILE\.lmstudio\scripts\Load-OpenCode-Qwen.mjs"   # idempotent Q5 pin
+Set-Location C:\                                                    # workspace root = C:\
+Start-Process "http://127.0.0.1:3080"
+npx "@deepseek-ai/dsh@0.1.0-rc.7" web                               # exact version pin</code></pre>
+  <h3>Credential — <code>C:\Users\scott\.dsh\.env</code></h3>
+  <pre><code>LMSTUDIO_API_KEY=lm-studio</code></pre>
+  <h3>Provider config — <code>C:\Users\scott\.dsh\settings.yaml</code> (not the patch file)</h3>
+  <p class="small">Source-verified: the base bundle mounts <code>llm-pi-ai</code> dormant; a <code>llm-pi-ai:</code> section in <code>settings.yaml</code> activates routes — hot-reloaded, no restart, the same file the web Models page writes. Row <code>id: llm</code> is the core LLM registry and is never patched.</p>
+  <pre><code>llm-pi-ai:
+  providers:
+    lmstudio:                      # permanent id — sessions embed it, never rename
+      displayName: LM Studio (HALO)
+      api: openai-completions
+      baseURL: http://127.0.0.1:1234/v1
+      apiKeyEnv: LMSTUDIO_API_KEY
+      compat:
+        thinkingFormat: qwen
+        supportsReasoningEffort: true
+      models:
+        - id: qwen/qwen3.8-27b
+          name: Qwen3.8 27B Q5 — daily brain
+          contextWindow: 65536
+          maxTokens: 8192
+          input: [text, image]
+        - id: qwen3-coder-30b-a3b-instruct
+          name: Qwen3 Coder 30B MoE — on-demand worker
+          contextWindow: 32768
+          maxTokens: 8192</code></pre>
+  <h3>Home patch — <code>C:\Users\scott\.dsh\cordis.patch.yml</code> (MCP rows only, Phase 3)</h3>
+  <pre><code>- insert:
+    - id: mcp-browser
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: browser
+        transport: stdio
+        command: npx
+        args: ['@browsermcp/mcp@latest']
+    - id: mcp-memory
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: memory
+        transport: stdio
+        command: npx
+        args: ['-y', '@modelcontextprotocol/server-memory']</code></pre>
+  <h3>User preset — <code>.dsh\.agent-presets\halo-standard\</code></h3>
+  <p>A copy of the shipped <em>standard</em> preset with the <code>codex</code> and <code>claude-code</code> subagent rows enabled (they ship disabled). Later home for skills and creator-mode additions. The stock install is never modified.</p>
+</section>
+
+<section id="routing">
+  <h2>7. Routing policy</h2>
+  <div class="diagram">
+    <svg viewBox="0 0 1060 260" role="img" aria-label="Routing: cockpit turns go to the brain; subagent fan-out goes to the MoE worker; hard problems escalate to Codex or Claude; browser work goes through BrowserMCP">
+      <rect class="node primary" x="35" y="86" rx="13" width="200" height="84"/><text class="svg-title" x="135" y="118" text-anchor="middle">dsh session</text><text class="svg-copy" x="135" y="140" text-anchor="middle">decides per task</text>
+      <path class="arrow" d="M235 100 L330 52"/><path class="arrow" d="M235 128 L330 128"/><path class="arrow" d="M235 156 L330 204"/>
+      <rect class="node good" x="330" y="22" rx="13" width="290" height="62"/><text class="svg-title" x="475" y="48" text-anchor="middle">Brain · Q5 dense</text><text class="svg-copy" x="475" y="68" text-anchor="middle">cockpit turns · review · architecture</text>
+      <rect class="node warn" x="330" y="98" rx="13" width="290" height="62"/><text class="svg-title" x="475" y="124" text-anchor="middle">Worker · MoE coder</text><text class="svg-copy" x="475" y="144" text-anchor="middle">spawn/fork · workflows · Ralph rounds</text>
+      <rect class="node alt" x="330" y="174" rx="13" width="290" height="62"/><text class="svg-title" x="475" y="200" text-anchor="middle">Cloud escalation</text><text class="svg-copy" x="475" y="220" text-anchor="middle">codex · claude-code (existing auth)</text>
+      <path class="arrow" d="M620 128 L720 128"/>
+      <rect class="node" x="720" y="98" rx="13" width="300" height="62"/><text class="svg-title" x="870" y="124" text-anchor="middle">MCP reach</text><text class="svg-copy" x="870" y="144" text-anchor="middle">BrowserMCP (signed-in Chrome) · memory</text>
+    </svg>
+  </div>
+  <table><thead><tr><th>Work</th><th>Route</th><th>Why</th></tr></thead><tbody>
+    <tr><td>Daily coding, exploration, edits, tests</td><td>Brain (Q5 dense)</td><td>Best local quality; prefill mostly cached</td></tr>
+    <tr><td>Subagent / workflow / Ralph grunt work</td><td>Worker (MoE coder)</td><td>Swap-free own queue; decode ≈ parity — bench decides</td></tr>
+    <tr><td>Hard architecture, debugging, second opinion</td><td>Codex / Claude Code subagent</td><td>Existing auth; true concurrency</td></tr>
+    <tr><td>Signed-in browser tasks</td><td>BrowserMCP tools</td><td>Real Chrome profile</td></tr>
+    <tr><td>Cross-session facts</td><td>Memory MCP + visible Markdown</td><td>Inspectable, portable</td></tr>
+    <tr><td>Requested persistent loops</td><td>Ralph</td><td>Bounded rounds, explicit ask only</td></tr>
+  </tbody></table>
+  <div class="callout"><strong>Standing rules:</strong> never rename the <code>lmstudio</code> provider id or model identifiers (sessions embed them) · <code>parallel: 1</code> per model · don't fire simultaneous turns at the same model from both apps when latency matters.</div>
+</section>
+
+<section id="phases">
+  <h2>8. Implementation phases</h2>
+  <div class="steps">
+    <div class="step"><b>Install and wire (one sitting).</b> Node 22+ check → pinned install → <code>.env</code> credential → home patch → launcher → verify with <code>dsh web --dump-config</code> → smoke test: fresh session at <code>C:\</code> discovers a repo, reads, edits, runs tests, prepares (doesn't push) a commit.</div>
+    <div class="step"><b>Bench day.</b> First a single-Q5 Standard baseline + real prefix-cache validation (prefill tok/s and cache hits measured separately from decode). Then five load configs: Q5 alone · Coder alone · both idle · both generating · a full task on each; plus Standard vs Code mode on the winner. Judge on correctness, wall-clock, failed tool calls, recovery, contention, and memory left for the rest of the machine. The worker stays loaded only if complete-task wall-clock justifies its footprint.</div>
+    <div class="step"><b>Reach.</b> BrowserMCP + extension → navigation, extraction, screenshot, one reversible signed-in action. Memory MCP → store, then recall from a completely fresh session. Enable <code>halo-standard</code> with Codex/Claude rows → one task each. Ten-minute OpenCode ACP probe; wire it only if OpenCode speaks ACP server-side — no custom bridge.</div>
+    <div class="step"><b>Harden.</b> Restart + reboot persistence · resume across a forced compaction boundary · background job start/kill · both models unload and memory returns · back up <code>.dsh</code> to the ConfigBackups dir · then desktop launcher polish, autostart, and a creator-mode mission-control panel as the first Creator experiment.</div>
+  </div>
+</section>
+
+<section id="accept">
+  <h2>9. Acceptance criteria</h2>
+  <ul class="checklist">
+    <li>Launcher opens the Web UI with no terminal steps.</li>
+    <li>Fresh session starts at <code>C:\</code> in <code>danger-full-access</code> / <code>never</code>.</li>
+    <li>Brain reports 65,536 context via the stable id; vision and tool calls pass end-to-end.</li>
+    <li>Standard mode completes the bench task; Code mode becomes default only if it wins.</li>
+    <li>A session crosses an automatic compaction and continues correctly.</li>
+    <li>Cache-hit rate is visibly non-zero after the first turns.</li>
+    <li>Worker serves a subagent turn while the brain is mid-turn (two-queue proof).</li>
+    <li>BrowserMCP drives the signed-in Chrome profile.</li>
+    <li>Memory recalls a stored fact in a brand-new session.</li>
+    <li>Codex and Claude Code subagent tasks succeed on existing auth.</li>
+    <li>OpenCode still works, unchanged, against the same Q5 identity.</li>
+    <li>Everything survives app restart and a Windows reboot; models unload cleanly.</li>
+  </ul>
+  <h3>Rollback</h3>
+  <ul>
+    <li>Q4_K_M untouched; verified Q5 config backup retained.</li>
+    <li>Harness pinned at <code>0.1.0-rc.7</code>; effective config dump saved beside the backup.</li>
+    <li>All local behavior in home patch + user preset — stock install never modified.</li>
+    <li>Deleting <code>C:\Users\scott\.dsh</code> removes the harness footprint completely; OpenCode unaffected throughout.</li>
+  </ul>
+  <div class="callout ok"><strong>Bottom line:</strong> pinned harness cockpit · env-var full access · brain/worker two-model split · ship-default compaction riding a prefix-cache-stable request shape · BrowserMCP + memory MCP · Codex/Claude escalation · OpenCode untouched · nothing custom until something shipped fails.</div>
+</section>
+
+<section id="refs">
+  <h2>10. References</h2>
+  <ul class="sources">
+    <li><a href="https://deepseek.com/harness/en/">DeepSeek Harness product page</a></li>
+    <li><a href="https://github.com/deepseek-ai/deepseek-harness">Official repository</a> — tag <code>dsh-v0.1.0-rc.7</code></li>
+    <li><a href="https://deepseek-harness.github.io/deepseek-harness/en/guide/quickstart">Official docs</a></li>
+    <li>Reviewed clone: <code>C:\Users\scott\Documents\Codex\2026-08-16\i-j\deepseek-harness-review</code></li>
+    <li>Community plugins: GitHub topic <code>dsh-plugin</code></li>
+    <li><a href="https://github.com/BrowserMCP/mcp">BrowserMCP</a></li>
+    <li>Codex predecessor design: <code>C:\Users\scott\Desktop\DeepSeek-Harness-OpenCode-Local-AI-Design.md</code></li>
+    <li><a href="https://resonantos.com/">ResonantOS architectural reference</a></li>
+  </ul>
+</section>
+
+<footer>Claude plan · self-contained · no CDN, no external scripts, no server required</footer>
+</main>
+</body>
+</html>

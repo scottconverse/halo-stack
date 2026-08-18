@@ -1,0 +1,3 @@
+name: HALO Standard
+description: Standard coding agent plus Codex, Claude Code, and OpenCode (ACP) subagents. Cockpit default for this machine.
+order: 0

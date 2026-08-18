@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local AI Coding System Design</title>
+  <style>
+    :root{--bg:#09111f;--panel:#101d30;--panel2:#14243b;--ink:#edf5ff;--muted:#a9bad0;--line:#2b4568;--cyan:#52d6ff;--blue:#6d8cff;--green:#57e3a1;--amber:#ffc96b;--pink:#ef88c9;--danger:#ff7b82}
+    *{box-sizing:border-box} html{scroll-behavior:smooth}
+    body{margin:0;background:linear-gradient(180deg,#07101d 0,#0b1626 48%,#08111e 100%);color:var(--ink);font:16px/1.62 Inter,Segoe UI,Arial,sans-serif}
+    a{color:var(--cyan)} code{font-family:Cascadia Code,Consolas,monospace;color:#d9ecff;background:#081321;padding:.08rem .28rem;border-radius:4px}
+    .shell{max-width:1240px;margin:auto;padding:28px 32px 80px}.hero{padding:54px 46px;border:1px solid var(--line);border-radius:24px;background:radial-gradient(circle at 85% 12%,#1a4670 0,transparent 34%),linear-gradient(135deg,#13243b,#0c192a);box-shadow:0 24px 80px #0007}
+    .kicker{text-transform:uppercase;letter-spacing:.18em;color:var(--cyan);font-weight:800;font-size:.78rem}.hero h1{font-size:clamp(2.25rem,5vw,4.6rem);line-height:1.03;margin:.25rem 0 1rem;max-width:940px}.hero p{max-width:850px;color:#c5d3e6;font-size:1.17rem}.meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}.pill{border:1px solid #42658b;background:#10233a;border-radius:999px;padding:7px 12px;color:#cde5ff;font-size:.9rem}
+    nav{position:sticky;top:0;z-index:5;margin:22px 0;padding:12px 16px;background:#0a1524e8;backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:14px;display:flex;gap:15px;overflow:auto;white-space:nowrap}nav a{text-decoration:none;color:#bfd1e6;font-size:.92rem}nav a:hover{color:white}
+    section{margin:26px 0;padding:30px;border:1px solid var(--line);border-radius:20px;background:linear-gradient(160deg,#101e32,#0c1828)}h2{font-size:1.75rem;margin:0 0 12px}h3{color:#dceaff;margin-top:26px}p,li{color:#c3d1e1}.lead{font-size:1.08rem;color:#e6f2ff}.callout{padding:18px 20px;border-left:4px solid var(--cyan);background:#0a1727;border-radius:7px}.ok{border-left-color:var(--green)}.warn{border-left-color:var(--amber)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}.card{padding:20px;border:1px solid #2b4667;border-radius:14px;background:#0b1728}.card h3{margin:0 0 8px;color:white}.card p{margin:.4rem 0}.metric{font-size:1.55rem;color:var(--green);font-weight:750}.small{font-size:.9rem;color:var(--muted)}
+    .diagram{margin:18px 0;padding:18px;border:1px solid #29496b;border-radius:16px;background:#071321;overflow:auto}.diagram svg{display:block;min-width:850px;width:100%;height:auto}.node{fill:#122743;stroke:#5683b3;stroke-width:2}.node.primary{fill:#12344c;stroke:#52d6ff}.node.good{fill:#123b32;stroke:#57e3a1}.node.alt{fill:#302742;stroke:#ef88c9}.node.warn{fill:#3d3020;stroke:#ffc96b}.svg-title{fill:#f2f8ff;font-weight:700;font-size:17px}.svg-copy{fill:#b9cbe0;font-size:13px}.arrow{stroke:#72a0c9;stroke-width:2.4;fill:none;marker-end:url(#arrow)}
+    table{width:100%;border-collapse:collapse;margin:15px 0;display:block;overflow:auto}th,td{text-align:left;padding:11px 13px;border-bottom:1px solid #29415f;vertical-align:top}th{color:white;background:#13243a}td{color:#c6d5e6}
+    .steps{counter-reset:step;display:grid;gap:13px}.step{position:relative;padding:17px 18px 17px 66px;border:1px solid #2b4767;border-radius:13px;background:#0b1829}.step:before{counter-increment:step;content:counter(step);position:absolute;left:18px;top:15px;width:31px;height:31px;border-radius:50%;display:grid;place-items:center;background:var(--blue);font-weight:800}.step b{color:white}.checklist{columns:2;column-gap:35px}.checklist li{break-inside:avoid;margin:.45rem 0}.status{display:inline-block;border-radius:6px;padding:2px 8px;font-size:.8rem;font-weight:700}.done{background:#164532;color:#85f4bd}.proposed{background:#40341d;color:#ffd486}
+    footer{text-align:center;color:#7f95ad;padding:30px}.sources li{word-break:break-word}
+    @media(max-width:760px){.shell{padding:14px}.hero{padding:30px 22px}section{padding:22px}.checklist{columns:1}}
+    @media print{body{background:white;color:#111}.shell{max-width:none;padding:0}.hero,section,.card,.step,.diagram{background:white;color:#111;box-shadow:none;border-color:#aaa}nav{display:none}p,li,td,.small{color:#222}.hero h1,h2,h3,.card h3,th{color:#111}.kicker,a{color:#075b88}.pill{color:#111;background:white}.diagram{break-inside:avoid}.diagram svg{background:#071321}.status{border:1px solid #777}}
+  </style>
+</head>
+<body>
+<main class="shell">
+  <header class="hero">
+    <div class="kicker">Full technical design</div>
+    <h1>Local AI Coding System</h1>
+    <p>DeepSeek Harness, Hermes Agent, OpenCode Desktop, LM Studio and Qwen3.8-27B on Windows 11 / AMD Strix Halo—with native full-drive coding, unattended operations, browser control, persistent memory and cloud-agent escalation.</p>
+    <div class="meta"><span class="pill">Revised: 17 Aug 2026</span><span class="pill">Interactive + operations planes</span><span class="pill">Windows native</span><span class="pill">AMD iGPU / Vulkan</span><span class="pill">C:\ capability</span><span class="pill">65,536-token daily context</span></div>
+  </header>
+
+  <nav><a href="#decision">Decision</a><a href="#architecture">Coding plane</a><a href="#deepseek">DeepSeek findings</a><a href="#model">Model layer</a><a href="#browser">Browser</a><a href="#routing">Routing</a><a href="#memory">Memory</a><a href="#hermes">Hermes + Mission Control</a><a href="#rollout">Rollout</a><a href="#acceptance">Acceptance</a><a href="#references">References</a></nav>
+
+  <section id="decision">
+    <h2>1. Executive decision</h2>
+    <p class="lead">Use <strong>DeepSeek Harness Web UI</strong> as the prospective primary interactive coding cockpit, preserve <strong>OpenCode Desktop</strong> as an independent coding and cloud-model interface, and add <strong>Hermes Agent</strong> later as a separate operations plane for cold-session schedules, messaging, memory and learned skills.</p>
+    <div class="callout ok"><strong>Model status:</strong> Unsloth Qwen3.8-27B UD-Q5_K_XL is installed, verified and now the OpenCode daily default. Q4_K_M remains installed as the fast rollback profile.</div>
+    <p>Do not build a replacement harness. DeepSeek Harness already supplies native Windows shell and filesystem tools, managed jobs, subagents, workflows, automatic compaction, session replay, skills and MCP integration. Add browser control and cross-session memory through existing MCP servers before writing custom plugins.</p>
+    <p>Start Qwen in Harness <strong>Standard mode</strong>. A/B-test Code mode later. Add Hermes only after this baseline is stable, and expose both through a thin mission-control page rather than creating another orchestration framework.</p>
+  </section>
+
+  <section id="architecture">
+    <h2>2. Interactive coding plane</h2>
+    <p>This is the foundation built first. The later Hermes operations plane shares its model and capabilities through an explicit queue policy; it does not replace this coding plane.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1120 700" role="img" aria-label="Architecture showing Scott operating DeepSeek Harness and OpenCode, both using LM Studio and Qwen, with Harness branches for native Windows tools, browser, memory, and subagents">
+        <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#72a0c9"/></marker></defs>
+        <rect class="node primary" x="435" y="20" rx="15" width="250" height="72"/><text class="svg-title" x="560" y="50" text-anchor="middle">Scott</text><text class="svg-copy" x="560" y="72" text-anchor="middle">Directs local and cloud work</text>
+        <path class="arrow" d="M520 92 L330 145"/><path class="arrow" d="M600 92 L790 145"/>
+        <rect class="node primary" x="170" y="145" rx="15" width="310" height="90"/><text class="svg-title" x="325" y="178" text-anchor="middle">DeepSeek Harness Web UI</text><text class="svg-copy" x="325" y="201" text-anchor="middle">Primary local-agent cockpit</text><text class="svg-copy" x="325" y="219" text-anchor="middle">Standard mode first</text>
+        <rect class="node alt" x="640" y="145" rx="15" width="310" height="90"/><text class="svg-title" x="795" y="178" text-anchor="middle">OpenCode Desktop</text><text class="svg-copy" x="795" y="201" text-anchor="middle">Independent coding UI</text><text class="svg-copy" x="795" y="219" text-anchor="middle">Fallback and cloud model cockpit</text>
+        <path class="arrow" d="M325 235 L500 290"/><path class="arrow" d="M795 235 L620 290"/>
+        <rect class="node good" x="405" y="290" rx="15" width="310" height="98"/><text class="svg-title" x="560" y="322" text-anchor="middle">LM Studio API</text><text class="svg-copy" x="560" y="345" text-anchor="middle">127.0.0.1:1234/v1</text><text class="svg-copy" x="560" y="365" text-anchor="middle">Vulkan · one inference slot</text>
+        <path class="arrow" d="M510 388 L360 440"/><path class="arrow" d="M610 388 L760 440"/>
+        <rect class="node good" x="185" y="440" rx="15" width="340" height="82"/><text class="svg-title" x="355" y="472" text-anchor="middle">Qwen3.8-27B UD-Q5_K_XL</text><text class="svg-copy" x="355" y="496" text-anchor="middle">Daily quality default · 65,536 context</text>
+        <rect class="node warn" x="595" y="440" rx="15" width="340" height="82"/><text class="svg-title" x="765" y="472" text-anchor="middle">Qwen3.8-27B Q4_K_M</text><text class="svg-copy" x="765" y="496" text-anchor="middle">Fast fallback · retained unchanged</text>
+        <path class="arrow" d="M170 190 L90 190 L90 580"/><path class="arrow" d="M90 580 L190 580"/>
+        <rect class="node" x="190" y="548" rx="13" width="205" height="68"/><text class="svg-title" x="292" y="576" text-anchor="middle">Windows tools</text><text class="svg-copy" x="292" y="597" text-anchor="middle">PowerShell · FS · Git · tests</text>
+        <rect class="node" x="425" y="548" rx="13" width="205" height="68"/><text class="svg-title" x="527" y="576" text-anchor="middle">Native memory</text><text class="svg-copy" x="527" y="597" text-anchor="middle">Compaction · log · replay</text>
+        <rect class="node" x="660" y="548" rx="13" width="205" height="68"/><text class="svg-title" x="762" y="576" text-anchor="middle">MCP integrations</text><text class="svg-copy" x="762" y="597" text-anchor="middle">Browser + cross-session memory</text>
+        <rect class="node" x="895" y="548" rx="13" width="205" height="68"/><text class="svg-title" x="997" y="576" text-anchor="middle">Subagents</text><text class="svg-copy" x="997" y="597" text-anchor="middle">Codex · Claude · ACP · cloud</text>
+        <path class="arrow" d="M395 582 L425 582"/><path class="arrow" d="M630 582 L660 582"/><path class="arrow" d="M865 582 L895 582"/>
+        <text class="svg-copy" x="560" y="668" text-anchor="middle">Harness owns orchestration; LM Studio owns inference; OpenCode remains independently usable.</text>
+      </svg>
+    </div>
+  </section>
+
+  <section id="deepseek">
+    <h2>3. What the source-level DeepSeek review established</h2>
+    <div class="grid">
+      <article class="card"><h3>Composition</h3><p>Profiles are ordered bundles plus profile, home and optional overlay patches. Local behavior can remain an overlay instead of a source fork.</p><p class="small">A targeted row's <code>config</code> is replaced rather than recursively merged, so the effective configuration must be dumped and validated after edits.</p></article>
+      <article class="card"><h3>Standard agent</h3><p>Already includes PowerShell, filesystem tools, search, jobs, skills, planning, compaction, subagents, workflows, Ralph, questions and task tracking.</p></article>
+      <article class="card"><h3>Code mode</h3><p>Lets Qwen batch tool operations through generated TypeScript. Potentially faster, but dependent on reliable code generation and process cleanup.</p></article>
+      <article class="card"><h3>Windows native</h3><p>Uses PowerShell and native Win32 paths. No Linux workspace or WSL translation is required.</p></article>
+    </div>
+
+    <h3>Standard versus Code mode</h3>
+    <table><thead><tr><th>Property</th><th>Standard</th><th>Code</th></tr></thead><tbody>
+      <tr><td>Tool presentation</td><td>Explicit normal tool calls</td><td>Generated TypeScript SDK and <code>run_code</code></td></tr>
+      <tr><td>Main benefit</td><td>Observable, dependable baseline</td><td>Can batch several operations in one model turn</td></tr>
+      <tr><td>Main risk</td><td>More inference round trips</td><td>Qwen must generate and repair orchestration code</td></tr>
+      <tr><td>Runtime</td><td>Normal Harness tools</td><td>Fresh Node worker; 512 MB heap; 60-second compute; 600-second wall; 64 MiB output</td></tr>
+      <tr><td>Recommendation</td><td><strong>Initial default</strong></td><td>A/B-test on real repository tasks</td></tr>
+    </tbody></table>
+
+    <h3>Full Windows-user capability</h3>
+    <div class="callout"><strong>Persistent target:</strong> workspace <code>C:\</code>, permission mode <code>danger-full-access</code>, approval policy <code>never</code>, native PowerShell, network and process execution enabled.</div>
+    <p>Harness then imposes no workspace-only filesystem or shell confinement. Effective capability matches the signed-in Windows account across the drive. Remaining limits are Windows ACLs, UAC/elevation, file locks and provider limits. Fresh sessions are required after changing the persistent permission default because sessions pin their permission state when created.</p>
+  </section>
+
+  <section id="model">
+    <h2>4. LM Studio and Qwen model layer</h2>
+    <div class="grid">
+      <article class="card"><div class="metric">Q5_K_XL</div><p>Verified Unsloth daily-quality model</p></article>
+      <article class="card"><div class="metric">65,536</div><p>Exact daily context on server and clients</p></article>
+      <article class="card"><div class="metric">1 slot</div><p>Best single-agent latency and prefix reuse</p></article>
+      <article class="card"><div class="metric">Q4 retained</div><p>Fast rollback profile remains installed</p></article>
+    </div>
+    <h3>Stable API contract</h3>
+    <ul><li>Base URL: <code>http://127.0.0.1:1234/v1</code></li><li>Stable model ID: <code>qwen/qwen3.8-27b</code></li><li>Permanent Harness provider ID: <code>lmstudio</code></li><li>Normal output ceiling: 8,192</li><li>Harmless placeholder local credential stored through Harness credentials</li></ul>
+    <h3>Verified installed configuration <span class="status done">Complete</span></h3>
+    <p>The exact Q5 file is 20,218,178,624 bytes with SHA-256 <code>176A6A3F034E9CDC447C10CD00329FC9B31002E6589B9295F2AD4F1EEFE0F6AB</code>. Its matching F16 vision projector is installed. OpenCode identifies it as <strong>Qwen3.8 27B UD-Q5_K_XL — Local Daily Driver</strong>. Direct tool calling and an end-to-end <code>Q5-READY</code> OpenCode test passed.</p>
+    <p>Tuned loading remains full/max GPU offload, strict VRAM cap, Flash Attention, unified GPU F16 KV, batch 2,048, micro-batch 512, checkpoints 32, MTP depth 4 with probability floor 0.5, memory mapping disabled and keep-model-in-memory disabled. Backup: <code>C:\Users\scott\Documents\Codex\ConfigBackups\Qwen-Q5-20260817-124847</code>.</p>
+
+    <h3>Context and compaction</h3>
+    <p>Harness compacts near 80% of the actual context, retains about 16%, allows an 8,192-token summary, prunes large tool results first, replays the stable prefix for cache reuse and replaces old history with a checkpoint.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1000 210" role="img" aria-label="Context budget diagram showing compaction around 80 percent and retained context around 16 percent">
+        <defs><marker id="arrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#72a0c9"/></marker></defs>
+        <rect x="70" y="62" width="800" height="55" rx="12" fill="#122743" stroke="#5683b3" stroke-width="2"/><rect x="70" y="62" width="640" height="55" rx="12" fill="#1c5268"/><rect x="70" y="62" width="128" height="55" rx="12" fill="#1e674c"/>
+        <text class="svg-title" x="134" y="96" text-anchor="middle">Retain ≈16%</text><text class="svg-title" x="455" y="96" text-anchor="middle">Working history grows toward 80%</text><text class="svg-title" x="790" y="96" text-anchor="middle">Headroom</text>
+        <path d="M710 50 L710 128" stroke="#ffc96b" stroke-width="3"/><text class="svg-copy" x="710" y="36" text-anchor="middle">Compact around 52,428 tokens</text>
+        <text class="svg-copy" x="70" y="148">0</text><text class="svg-copy" x="842" y="148">65,536</text><text class="svg-copy" x="500" y="185" text-anchor="middle">Keep the 65K daily profile; add a separate 131K profile only when real work requires it.</text>
+      </svg>
+    </div>
+  </section>
+
+  <section id="browser">
+    <h2>5. Browser-controlling agent</h2>
+    <p>DeepSeek Harness does not ship a production interactive browser controller. Its repository's Playwright usage tests the Harness UI; the Web UI does not automatically provide the agent with a page DOM or screenshot. The transcript's Augmentor-style browser worker was an added component.</p>
+    <div class="grid">
+      <article class="card"><h3>1 · BrowserMCP</h3><p><strong>Recommended first.</strong> Controls the existing Chrome profile locally and keeps signed-in sessions. Best match for YouTube, authenticated dashboards, comments, admin pages and real browser state.</p></article>
+      <article class="card"><h3>2 · Browser Use</h3><p>Evaluate for longer self-healing tasks, isolated browser instances and repeatable automation when BrowserMCP proves insufficient.</p></article>
+      <article class="card"><h3>3 · Custom plugin</h3><p>Build only after an existing MCP path demonstrates a concrete limitation. Do not create a second browser framework preemptively.</p></article>
+    </div>
+    <div class="diagram">
+      <svg viewBox="0 0 1060 250" role="img" aria-label="Browser agent flow from Harness through MCP to an existing signed-in Chrome profile and back">
+        <defs><marker id="arrow3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#72a0c9"/></marker></defs>
+        <rect class="node primary" x="35" y="70" rx="14" width="210" height="84"/><text class="svg-title" x="140" y="104" text-anchor="middle">Harness agent</text><text class="svg-copy" x="140" y="128" text-anchor="middle">Plans browser task</text>
+        <path class="arrow" d="M245 112 L315 112"/><text class="svg-copy" x="280" y="94" text-anchor="middle">MCP</text>
+        <rect class="node" x="315" y="70" rx="14" width="210" height="84"/><text class="svg-title" x="420" y="104" text-anchor="middle">BrowserMCP</text><text class="svg-copy" x="420" y="128" text-anchor="middle">Local server + extension</text>
+        <path class="arrow" d="M525 112 L595 112"/>
+        <rect class="node good" x="595" y="70" rx="14" width="210" height="84"/><text class="svg-title" x="700" y="104" text-anchor="middle">Existing Chrome</text><text class="svg-copy" x="700" y="128" text-anchor="middle">Signed-in real profile</text>
+        <path class="arrow" d="M805 112 L875 112"/>
+        <rect class="node alt" x="875" y="70" rx="14" width="150" height="84"/><text class="svg-title" x="950" y="104" text-anchor="middle">Result</text><text class="svg-copy" x="950" y="128" text-anchor="middle">Data + screenshot</text>
+        <text class="svg-copy" x="530" y="210" text-anchor="middle">Validate navigation, inspection, screenshots, extraction and one reversible authenticated action.</text>
+      </svg>
+    </div>
+  </section>
+
+  <section id="routing">
+    <h2>6. Subagents and model routing</h2>
+    <p>Harness supports in-process subagents, optional Codex and Claude Code providers, generic ACP agents, and complete child Harness processes. The source has no ready-made OpenCode subagent adapter; ACP compatibility must be verified before considering a custom bridge.</p>
+    <table><thead><tr><th>Work</th><th>Preferred worker</th><th>Reason</th></tr></thead><tbody>
+      <tr><td>Repository exploration, coding, tests</td><td>Local Qwen Q5</td><td>Daily quality default with zero cloud cost</td></tr>
+      <tr><td>Fast mechanical work</td><td>Local Qwen Q4 fallback</td><td>Higher throughput when maximum quality is unnecessary</td></tr>
+      <tr><td>Architecture, hard debugging, second opinion</td><td>Codex or Claude</td><td>Cloud specialist escalation</td></tr>
+      <tr><td>Authenticated browser interaction</td><td>BrowserMCP worker</td><td>Uses the real signed-in Chrome profile</td></tr>
+      <tr><td>Large explicit fan-out</td><td>Harness workflow + cloud workers</td><td>Actual concurrency without blocking the one local slot</td></tr>
+      <tr><td>Requested persistent iterative work</td><td>Ralph loop</td><td>Fresh worker cycles with explicit completion condition</td></tr>
+    </tbody></table>
+    <div class="callout warn"><strong>Concurrency reality:</strong> LM Studio has one inference slot. Multiple local Qwen agents queue rather than run in parallel. Keep local work sequential; use cloud workers for true concurrent fan-out.</div>
+  </section>
+
+  <section id="memory">
+    <h2>7. Memory, research and resource policy</h2>
+    <h3>Memory</h3>
+    <p>Harness's append-only session log already provides resume, fork, replay and session search. Add one existing MCP memory server for cross-session recall: start with MCP Reference Memory, evaluate Memorix if richer retrieval is needed, and keep substantive research as visible Markdown or JSONL files.</p>
+    <h3>Resource rules</h3>
+    <ul><li>Retain the 64 GB system / 64 GB VGM split.</li><li>Share one loaded Qwen model between Harness, OpenCode and any later Hermes profile.</li><li>Avoid simultaneous Qwen turns from multiple applications when latency matters.</li><li>Keep <code>parallel: 1</code>.</li><li>Keep the model unloadable so other Windows and AI workloads can reclaim memory.</li><li>Do not autostart Harness or Hermes until their restart and endurance tests pass.</li><li>Avoid unnecessary parallel browser instances because Chrome can consume substantial RAM.</li></ul>
+  </section>
+
+  <section id="hermes">
+    <h2>8. Transcript 2: Hermes operations plane and Mission Control</h2>
+    <p><code>C:\Users\scott\Desktop\transcript2.txt</code> adds a sound architectural idea: keep interactive coding separate from unattended operations, and make both visible from one browser-based control surface. Official Hermes documentation confirms its persistent memory, learned skills, native Windows support, messaging gateway, cron jobs, browser tools and OpenAI-compatible local-model support.</p>
+    <h3>Claims retained, corrected or rejected</h3>
+    <table><thead><tr><th>Transcript claim</th><th>Design judgment</th></tr></thead><tbody>
+      <tr><td>DeepSeek is plugin-composed and moldable</td><td><strong>Confirmed.</strong> Customize through official overlays and presets instead of forking core.</td></tr>
+      <tr><td>Creator mode builds custom experiences</td><td><strong>Partly confirmed.</strong> It drafts custom agent presets. Arbitrary production UI still requires a client plugin or separate web surface.</td></tr>
+      <tr><td>DeepSeek can provide cron scheduling</td><td><strong>Overstated.</strong> The shipped scheduler supports delays, absolute times and fixed intervals, but is session-local. A closed session does not become an always-on cron service.</td></tr>
+      <tr><td>Hermes learns and remembers</td><td><strong>Confirmed.</strong> Procedural skill creation and cross-session memory are core differentiators.</td></tr>
+      <tr><td>Hermes handles messaging and schedules</td><td><strong>Confirmed.</strong> Its long-running gateway supports messaging channels and first-class cron delivery.</td></tr>
+      <tr><td>DeepSeek is categorically faster</td><td><strong>Anecdotal.</strong> Select by on-box end-to-end benchmark with the same model and task.</td></tr>
+      <tr><td>Run both</td><td><strong>Accepted with lane separation.</strong> Harness codes interactively; Hermes handles unattended operations.</td></tr>
+      <tr><td>Star counts imply maturity</td><td><strong>Rejected.</strong> Pin versions and trust tests, restart behavior and source inspection.</td></tr>
+    </tbody></table>
+
+    <h3>Bounded responsibilities</h3>
+    <div class="grid">
+      <article class="card"><h3>Interactive plane</h3><p><strong>DeepSeek Harness:</strong> repository coding, full-drive shell/filesystem work, tests, Git, visible plans, traces, compaction, session forks and active-task subagents.</p><p><strong>OpenCode:</strong> independent coding UI and cloud-model catalog.</p></article>
+      <article class="card"><h3>Operations plane</h3><p><strong>Hermes:</strong> durable cron, messaging delivery, background research/monitoring, cross-session operational memory and controlled procedural skill improvement.</p></article>
+      <article class="card"><h3>Control plane</h3><p><strong>Mission Control:</strong> service health, queues, schedules, logs, loaded model, memory pressure and links to native interfaces. It owns no irreplaceable state.</p></article>
+    </div>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1120 590" role="img" aria-label="Revised two-plane architecture with Mission Control above DeepSeek Harness and Hermes, a queue policy, LM Studio and shared capability providers">
+        <defs><marker id="arrow4" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#72a0c9"/></marker></defs>
+        <rect class="node primary" x="405" y="25" rx="15" width="310" height="82"/><text class="svg-title" x="560" y="57" text-anchor="middle">Mission Control</text><text class="svg-copy" x="560" y="81" text-anchor="middle">Observe · launch · diagnose</text>
+        <path d="M500 107 L300 165" stroke="#72a0c9" stroke-width="2.4" fill="none" marker-end="url(#arrow4)"/><path d="M620 107 L820 165" stroke="#72a0c9" stroke-width="2.4" fill="none" marker-end="url(#arrow4)"/>
+        <text class="svg-copy" x="270" y="146" text-anchor="middle">interactive plane</text><text class="svg-copy" x="850" y="146" text-anchor="middle">operations plane</text>
+        <rect class="node good" x="120" y="165" rx="15" width="350" height="100"/><text class="svg-title" x="295" y="199" text-anchor="middle">DeepSeek Harness + OpenCode</text><text class="svg-copy" x="295" y="224" text-anchor="middle">coding · tests · Git · active subagents</text><text class="svg-copy" x="295" y="244" text-anchor="middle">full C:\ Windows capability</text>
+        <rect class="node alt" x="650" y="165" rx="15" width="350" height="100"/><text class="svg-title" x="825" y="199" text-anchor="middle">Hermes Gateway</text><text class="svg-copy" x="825" y="224" text-anchor="middle">cron · messages · memory · learned skills</text><text class="svg-copy" x="825" y="244" text-anchor="middle">cold-session operational work</text>
+        <path d="M295 265 L480 330" stroke="#72a0c9" stroke-width="2.4" fill="none" marker-end="url(#arrow4)"/><path d="M825 265 L640 330" stroke="#72a0c9" stroke-width="2.4" fill="none" marker-end="url(#arrow4)"/>
+        <rect class="node warn" x="400" y="330" rx="15" width="320" height="88"/><text class="svg-title" x="560" y="363" text-anchor="middle">Local inference queue policy</text><text class="svg-copy" x="560" y="388" text-anchor="middle">interactive priority · one local turn</text>
+        <path d="M560 418 L560 465" stroke="#72a0c9" stroke-width="2.4" fill="none" marker-end="url(#arrow4)"/>
+        <rect class="node good" x="385" y="465" rx="15" width="350" height="85"/><text class="svg-title" x="560" y="498" text-anchor="middle">LM Studio · Qwen Q5 / Q4</text><text class="svg-copy" x="560" y="523" text-anchor="middle">shared stable API · parallel 1</text>
+        <rect class="node" x="35" y="350" rx="13" width="255" height="70"/><text class="svg-title" x="162" y="379" text-anchor="middle">Shared capabilities</text><text class="svg-copy" x="162" y="402" text-anchor="middle">BrowserMCP · filesystem · cloud</text>
+        <path d="M290 385 L400 385" stroke="#72a0c9" stroke-width="2.4" fill="none" marker-end="url(#arrow4)"/>
+        <rect class="node" x="830" y="350" rx="13" width="255" height="70"/><text class="svg-title" x="957" y="379" text-anchor="middle">Auditable state</text><text class="svg-copy" x="957" y="402" text-anchor="middle">receipts · logs · job history</text>
+        <path d="M830 385 L720 385" stroke="#72a0c9" stroke-width="2.4" fill="none" marker-end="url(#arrow4)"/>
+      </svg>
+    </div>
+
+    <h3>Shared-model queue policy</h3>
+    <ol><li>Interactive Harness/OpenCode work has priority over background local inference.</li><li>Hermes jobs that must run at a fixed time use a cloud/free route when local coding may be active.</li><li>Local Hermes jobs run in configured idle windows or after an explicit queue check.</li><li>Auxiliary compression, title or extraction tasks use smaller/cheaper routes where practical.</li><li>Every scheduled run records provider, model, timing, outcome and error state.</li></ol>
+
+    <h3>Mission Control scope</h3>
+    <p>Build it last as a thin web page showing Harness, Hermes, OpenCode and LM Studio health; loaded quant/context and memory; active sessions; schedules and next run; jobs/subagents; BrowserMCP connection; recent failures; and explicit Q5/Q4 load and unload controls. It must not duplicate chat databases, schedulers, permissions or model-routing state.</p>
+  </section>
+
+  <section id="rollout">
+    <h2>9. Implementation sequence</h2>
+    <div class="steps">
+      <div class="step"><b>Pin and install Harness.</b> Use a versioned Harness home, preserve stock files, and put local behavior in an overlay.</div>
+      <div class="step"><b>Configure Windows capability.</b> Set <code>C:\</code>, <code>danger-full-access</code>, <code>never</code>, PowerShell, network and process execution; dump the effective configuration.</div>
+      <div class="step"><b>Connect LM Studio Q5.</b> Add the permanent <code>lmstudio</code> route and credential; validate text, vision, tools, edits, PowerShell, tests, Git and GitHub.</div>
+      <div class="step"><b>Benchmark Standard versus Code mode.</b> Use identical representative repository work and select by correctness, task time, recovery and cleanup.</div>
+      <div class="step"><b>Add BrowserMCP.</b> Pin its version and validate the intended signed-in Chrome profile, screenshots, extraction and a reversible action.</div>
+      <div class="step"><b>Add persistent memory.</b> Test a stored decision and its recall from a completely fresh session.</div>
+      <div class="step"><b>Enable external agents.</b> Configure official Codex and Claude providers; test OpenCode ACP before any custom bridge.</div>
+      <div class="step"><b>Add Hermes operations profile.</b> Pin the native Windows release; validate LM Studio routing, procedural skills, memory, cron persistence and one delivery channel.</div>
+      <div class="step"><b>Run the production audit.</b> Exercise compaction, resume, forks, cron, background jobs, queue contention, process cleanup, model unloading, restart and reboot persistence.</div>
+      <div class="step"><b>Add Mission Control and launchers.</b> Build the thin status/launch page only after every underlying service passes independently.</div>
+    </div>
+  </section>
+
+  <section id="acceptance">
+    <h2>10. Acceptance criteria</h2>
+    <ul class="checklist">
+      <li>Harness opens from a desktop launcher without a CLI workflow.</li>
+      <li>A fresh session starts at <code>C:\</code> with persistent Windows-user capability.</li>
+      <li>Qwen Q5 is selected through the stable ID and reports 65,536 context.</li>
+      <li>The agent discovers repositories anywhere on <code>C:\</code> without Scott locating them.</li>
+      <li>It edits, installs dependencies, runs tests, executes Git and uses the network.</li>
+      <li>Standard mode completes representative coding reliably.</li>
+      <li>Code mode becomes default only if its benchmark wins.</li>
+      <li>Compaction preserves state through a long task.</li>
+      <li>BrowserMCP operates the intended signed-in Chrome session.</li>
+      <li>Persistent memory recalls information in a new session.</li>
+      <li>Codex and Claude tasks succeed using existing authentication.</li>
+      <li>OpenCode remains independently functional.</li>
+      <li>Closing/unloading returns memory to other Windows applications.</li>
+      <li>Configuration survives application restart and Windows reboot.</li>
+      <li>Hermes jobs, when enabled, run while Harness is closed and leave an auditable result.</li>
+      <li>Hermes memory and learned skills are inspectable, isolated and reversible.</li>
+      <li>A scheduled Hermes job cannot silently contend with active interactive Qwen work.</li>
+      <li>Mission Control can close or fail without stopping any underlying service.</li>
+    </ul>
+
+    <h3>Rollback and recoverability</h3>
+    <ul><li>Keep Q4 installed and untouched.</li><li>Retain the verified Q5 backup.</li><li>Pin the Harness version and store its effective config dump.</li><li>Use overlays instead of modifying official source.</li><li>Keep OpenCode working throughout deployment.</li><li>Back up Harness home before structural changes.</li><li>Keep Hermes in a separate profile/home with independent memory and skill backups.</li><li>Mission Control stores no irreplaceable state.</li><li>Record exact MCP/plugin versions and configurations.</li></ul>
+
+    <div class="callout ok"><strong>Final recommendation:</strong> Harness Standard as the initial interactive coding cockpit; OpenCode retained independently; LM Studio serving verified Q5 and retained Q4; full <code>C:\</code> Windows-user capability; BrowserMCP for signed-in Chrome; official Codex/Claude providers; then Hermes as a bounded operations plane for cold-session cron, messaging, memory and learned skills. Add Mission Control last as an observability/launch surface, never as another stateful agent framework.</div>
+  </section>
+
+  <section id="references">
+    <h2>11. Primary references</h2>
+    <ul class="sources"><li><a href="https://deepseek.com/harness/en/">DeepSeek Harness product page</a></li><li><a href="https://github.com/deepseek-ai/deepseek-harness">Official DeepSeek Harness repository</a></li><li><a href="https://deepseek-harness.github.io/deepseek-harness/en/guide/quickstart">Official Harness documentation</a></li><li>Reviewed local clone: <code>C:\Users\scott\Documents\Codex\2026-08-16\i-j\deepseek-harness-review</code></li><li>Incorporated transcript: <code>C:\Users\scott\Desktop\transcript2.txt</code></li><li><a href="https://github.com/NousResearch/hermes-agent">Official Hermes Agent repository</a></li><li><a href="https://hermes-agent.nousresearch.com/docs/">Hermes Agent documentation</a></li><li><a href="https://hermes-agent.nousresearch.com/docs/user-guide/windows-native">Hermes native Windows guide</a></li><li><a href="https://hermes-agent.nousresearch.com/docs/developer-guide/architecture">Hermes architecture</a></li><li><a href="https://github.com/BrowserMCP/mcp">BrowserMCP</a></li><li><a href="https://github.com/browser-use/browser-use">Browser Use</a></li><li><a href="https://github.com/browser-use/browser-harness">Browser Harness</a></li><li><a href="https://resonantos.com/">ResonantOS architectural reference</a></li></ul>
+  </section>
+  <footer>Self-contained document · No CDN, external script or web server required</footer>
+</main>
+</body>
+</html>

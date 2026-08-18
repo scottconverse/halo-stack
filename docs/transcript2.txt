@@ -1,0 +1,120 @@
+In this video
+
+
+Chapters
+
+Transcript
+Search transcript
+Search transcript
+
+Chapter 1: Intro – DeepSeek Harness vs Hermes: which agent wins
+0:000 secondsDeep Sea Carnis versus Hermes. Which AI agent should you actually use? So, one of these just pulled in around 113,000
+0:077 secondsGitHub stars in two days. The other has around 226,000 stars and 6 months of updates behind it. Both are free, both open source, and both want to be the
+0:1616 secondsagent running your business every single day. By the end of this, you'll know exactly what each one does well, where each one fails and falls down, and why
+0:2424 secondsthe answer might surprise you. Let's start with what actually happened, cuz this is brand new. So, a few days ago, Deepseek dropped two things at once. The
+Chapter 2: The Launch – DeepSeek's harness hits 113K stars in 2 days
+0:3232 secondsDeep Seek V4 Pro model and a developer preview of something called Deepseek Harness. The model got attention, but
+0:4040 secondsthe harness is the bigger story. So, within 2 days at close to 113,000 GP stars, it's actually now 136K, which
+0:4747 secondsmakes it one of the fastest growing open source projects right now. One day after launch, the community had already published like 421 plugins for it. So,
+0:5454 secondswhat is it? Well, Deepsec harness is a local AI agent that runs on your computer. The model itself is not running locally, but the agent is, and
+1:031 minute, 3 seconds[snorts] it's a harness, so it can read files, run commands, change code, search the web, do the work for you. On the surface, it kind of sounds like claw code or codeex, but the design
+1:121 minute, 12 secondsunderneath is completely different. And that design is the reason like developers are going crazy for it.
+Chapter 3: Plugin Design – why every piece is swappable
+1:161 minute, 16 seconds[snorts] Everything is a plugin. That's their official slogan. And they mean it literally. So, the model it uses can be a plugin. The tools it can call a
+1:241 minute, 24 secondsplugin. in memory. These session locks, the search, the sub aents, the scheduling, even the main loop that makes the agent think and act are all plugins. So, every single piece can be
+1:331 minute, 33 secondspulled out, swapped, or replaced without touching the core. You want to think of it like Lego. Most AI agents come as a finished toy, but this one works, but if
+1:411 minute, 41 secondsyou want to change one piece, you're kind of stuck with something like Claude Code. You can't change or any edit anything here. But with Deep Sea Carnis,
+1:501 minute, 50 secondsit comes as a box of bricks with instructions. So if you don't like the search engine, you can snap in a different one. If you don't like the model, you can plug in a different one.
+1:571 minute, 57 secondsIf you want to, for example, add a free model like we've added open [snorts] coats deep V4 flash as a drop down, no problem. You can just do that anytime
+2:052 minutes, 5 secondsyou want, right? So everything is editable. The look, the feel, everything inside it. The system underneath this is called Cordis. And this part matters
+2:132 minutes, 13 secondsmore than most people realize because Cordis isn't some experiment DeepC cooked up last month. It's a plug-in framework that's powered an open source chatbot project called COA for years.
+2:202 minutes, 20 secondsThe foundation of this brand new tool has years of real world testing behind it and that's a big reason it feels pretty solid right now straight out the gate. Now hold that for because we need
+Chapter 4: Hermes Breakdown – the self-improving memory system
+2:292 minutes, 29 secondsto talk about the other side of this which is Hermes. So Hermes is from News Research launched on February 25th 2026.
+2:362 minutes, 36 seconds6 months later it sits at around 226,000 GitHub stars which made it the fastest growing open source agent framework of
+2:432 minutes, 43 secondsthe year until this week when Deep Seek Harness started chasing that record.
+2:482 minutes, 48 secondsNow, one of the first biggest differences here is that it can talk to you through Telegram, WhatsApp, Discord, Microsoft Teams, even iMessage. And
+2:552 minutes, 55 secondsHermes has one feature that genuinely stands apart. So, it learns. Has a three layer memory system and a self-improvement loop. So, when Hermes
+3:033 minutes, 3 secondssolves a problem, it can save what it learned as a skill. Next time, it does the job faster because it remembers.
+3:083 minutes, 8 secondsMost agents don't have that self-improvement loop. Hermes does. So, on paper, this looks close, right? two free open- source agents, massive
+3:163 minutes, 16 secondscommunities, fast updates, but once you actually run one of them day after day, real differences show up. And there are three big ones. I'll walk you through each and the third is the one that
+3:243 minutes, 24 secondsalmost nobody talks about, but it decides the whole comparison. Quick thing before we get into it, I've helped over 3,000 business owners inside the air profit boardroom and a lot of them
+3:323 minutes, 32 secondshave come in never having touched an AI agent before. Right now the big project inside is the Agentic operating system which is one dashboard where you can
+3:403 minutes, 40 secondshave Hermes, you can have Deepseek Harness all plugged into one place where you can basically have all your agents working together and synced together as
+3:483 minutes, 48 secondswell nicely. And then you also get a community where you can ask questions, get help and support, create personalized tutorials for everyone inside here daily. Inside the classroom
+3:563 minutes, 56 secondsyou get access to all of our best trainings. In the calendar you can jump on weekly coaching calls. We have four of them per week. And then inside the map, you can meet people in your local area who are building out with AI agents like you. Feel free to check it out.
+4:064 minutes, 6 secondsLink in the comments description or go to the airbomb.com.
+Chapter 5: Beginner Pick – which agent breaks less
+4:094 minutes, 9 secondsOne of the first things that I've seen is that Deep Sea Carnis is more designed for coding. So if we have a look for
+4:164 minutes, 16 secondsexample here, it looks and feels much more like for example clawed code than an actual agent. Now you can change everything here and everything inside
+4:244 minutes, 24 secondshere is like moldable and changeable. So for example, you can even create your own mission control directly for something like DeepSeek. Create a
+4:324 minutes, 32 secondsmission control and then it created one locally which created a completely different UI for Hermes agent. One thing that I'll say with Hermes is that it
+4:394 minutes, 39 secondsdoes break a lot. So when I've tried these out side by side, Hermes is a bit different because it's powerful but it's kind of fiddly and it breaks more. So if
+4:474 minutes, 47 secondsyou're a complete beginner, I would actually go with Deep Seek Harness simply because it's easier to use. You can just type what you want in plain text. it breaks less and it's more
+4:554 minutes, 55 secondsreliable. Also, it's much easier to like just set the model and it looks and feels much more like Claude Code which is designed to be easier to use anyway.
+5:035 minutes, 3 secondsSo, if you want something stable and beginner friendly, I would go with Deep Sea Carnis. Also, another big difference here, if you're using, for example, Hermes, you can build your own custom
+5:115 minutes, 11 secondsworkflows like this, but they take a lot of work. So, for example, we've got Hermes Astros, we've got Hermes Muse, Hermes Oracle. This one, for example, can pull in the latest news from Twitter
+5:195 minutes, 19 secondsand then give us a list of what's trending right now on Twitter. but it's something that I had to code out for hours personally. Whereas, for example, if you are using DeepSeek, you can just
+5:285 minutes, 28 secondsgo to a new session and then you select creator mode. And what creator mode does is it allows you to build custom presets so that you can swap and change
+5:365 minutes, 36 secondseverything up. So, for example, over here we said add a small panel in the bottom corner that has my three tasks for the day and actually builds it out
+5:435 minutes, 43 secondsdirectly. So you can really easily edit with just a new session the actual interface itself which is quite
+5:505 minutes, 50 secondsdifferent to Hermes which feels a bit more fixed and then if you want to build something custom it's going to take you a few hours to set up. Also one thing to
+5:585 minutes, 58 secondsnote with Deepseek itself is this is brand new right so it's still in developer preview which means like things are going to change things are going to evolve pretty quickly and also
+6:076 minutes, 7 secondsit's probably going to break at times as well. So it definitely feels smooth when I use it, but just bear in mind like things are going to change I think massively cuz it's just on 0.1 version
+Chapter 6: Speed Test – output quality head-to-head
+6:156 minutes, 15 seconds0.1 for Deepseek. And difference number two is output quality. So for coding and building tasks, DeepC harness produces in my opinion better results, right? And
+6:246 minutes, 24 secondspart of that is the Deep Seek V4 Pro model behind it, but also it just seems a lot faster when you code out with it, right? So for example, let me show you
+6:316 minutes, 31 secondswhat this looks side by side. So, if we do a new session here and we're like build out a beautiful mission control for Deep Seek Harness and we'll plug
+6:386 minutes, 38 secondsthat in. And then if we do the same thing inside Hermes, for example, you can see that we can view everything that's being done here. So, we've got
+6:466 minutes, 46 secondsthe details of everything. Then we can click into it and see more of what's going on here. Right? So, instantly it's replying to us and giving us information. I've also found that deep
+6:556 minutes, 55 secondssea caris is just a lot faster to respond, give us detail, etc. If I have a look at Hermes agent here, you can see like we can give it the same request for
+7:027 minutes, 2 secondslike building out mission control, but it just takes ages to reply depending on what model you plug in, but overall it times out on big coding tasks. It's not
+7:117 minutes, 11 secondsreally a coding agent. It's more like for doing oneoff schedule tasks or or smaller tasks in general. Now, some people as well, they might be like, well, you know, Deep Seek, we can
+7:197 minutes, 19 secondsactually connect to our phone and you can connect that way. But actually, you can do the same thing with plugins from Deep Seek. So for example, if you have a look here, someone's actually created a
+7:287 minutes, 28 secondsability for DeepSeek to remotely connect from a paired mobile device. So it really is customizable because for example, you can just install a plugin
+7:367 minutes, 36 secondslike this or you can just go into creator mode and create your own and then you can connect deep carnis directly to your phone as well. So all of the things that you see directly
+7:447 minutes, 44 secondsinside Hermes agent, you can actually build into deep sea carnis. Another thing as well is like you've got a frontier model that is literally built
+7:527 minutes, 52 secondsfor the harness. So, for example, Hermes have their own models, but the problem is that with those models, they're not that new and they're not like Frontier
+8:018 minutes, 1 secondlevel. Whereas, for example, with Deep Seek, Deep Seek V4 Pro is literally designed for the harness. That's what it's built for. It's also a lot easier to see the session logs. So, for
+8:098 minutes, 9 secondsexample, you can just download the session logs like so, and it's pretty easy to get to. And additionally, what you'll find with Hermes agent is that you can build your own custom
+8:178 minutes, 17 secondsintegration like this. So it all fits nicely inside a web page. But normally people are using it inside a desktop, right? Desktop app. The problem with
+8:258 minutes, 25 secondsthat is like if you have to go to another app. So you got Hermes and then you got maybe you got Obsidian as your memory. Maybe then for example you got
+8:328 minutes, 32 secondsClawed Code running as well. The biggest issues with this is like it's just another thing to click into. Now I sort of got around this by plugging it into
+Chapter 7: Workflow Fit – browser-based vs juggling desktop apps
+8:398 minutes, 39 secondsmy Aentic operating system. But the main point here is like Deep Sea Carnis is basically just hosted locally as a website [snorts] which means like it
+8:478 minutes, 47 secondsjust fits into your current workflows if you're just using like for most people they're just inside the browser most of the day. They don't need another app to click into. Now you can also add
+8:568 minutes, 56 secondsscheduling into deepseek that allows you to use the same chron job style setup as open call or Hermes 2. So what you can
+9:049 minutes, 4 secondsdo is literally just add that as a new session with creator mode. So for example, if we go into new session here, create a mode, we can say, okay, create
+9:139 minutes, 13 secondsan option for me to schedule in tasks daily so that I can have schedule task running and I just set the time and the day and everything else and the repeatability.
+9:259 minutes, 25 secondsSo we're using creator mode to edit here and then we can plug this in. Now, however you're using Hermes agent as well, whether that's through the
+9:329 minutes, 32 secondsterminal or through the desktop, I would say that Deepseek is a lot more intuitive. But like the time that it took me to learn this was literally like
+9:409 minutes, 40 secondsmaybe 30 minutes, 1 hour because of using claude code and previous coding agents like that. It was really easy for me to get my head around. If for example
+9:489 minutes, 48 secondsyou go into Hermes agent, you can see that the UI itself is a lot more complicated. There's a lot more going on here. There's much more noise. So for example, we have the Hermes workspace.
+9:569 minutes, 56 secondsWe have the colors itself. the way that it's designed, it just doesn't feel quite as nice and clean as something like Deep Sea Carnis, which is kind of
+10:0410 minutes, 4 secondslike a combination between Chachet and Claude. When you actually open up, it's like really, really easy to use. Now, you [snorts] can see here it's actually building out the option for a list of
+10:1210 minutes, 12 secondsschedules. So, you can see it's designing the day semantics. It's planning the UI for that. It's validating all the options that we're
+10:2010 minutes, 20 secondsbuilding into this. And then it's even creating the CSS. So, we can literally build this out in real time. like everything is moldable inside here which
+10:2710 minutes, 27 secondsis huge. Now for me personally I like to run both right and I don't really see it as a choice. So the way that I like to
+Chapter 8: Final Verdict – why running both wins
+10:3410 minutes, 34 secondsuse this is I'll have both running inside an genetic operating system and then I can give each one the lane it's best at manage them from one place because here's the thing that all of
+10:4210 minutes, 42 secondsthis is telling you like open source projects are getting bigger and bigger like deep sea carnis Hermes the rise of openclaw this year the tools are free
+10:5110 minutes, 51 secondsand the models behind them even are free cuz you can plug in a free brain like for example deepse v4 flash from open code into both Hermes and into deepseeek
+11:0011 minuteswhich means you can have them plugged in and just one tab away from each other and I think that's the best way to run this. If I had to pick one, I would go with DC Caris simply because it's more
+11:0911 minutes, 9 secondsmoldable, more fun to play with, more intuitive, and way more relaxed as well.
+11:1211 minutes, 12 secondsSo, you can see it's actually building theuler into our dashboard and we can have them running side by side here. And that way as well, like when you've got an agentic operating system, it doesn't
+11:2111 minutes, 21 secondsreally matter what harness comes out next, what agent comes out next because the system improves every time that happens. So, for example, as soon as Hermes came out, we plugged it into our
+11:2911 minutes, 29 secondsAgentic operating system. As soon as Deep Sea came out, we plugged it into the Agentic operating system, too. As soon as I started automating workflows like SEO, I could have it all inside one
+11:3811 minutes, 38 secondsbuild. And I think that's the best way to get the most out of them. And again, like both of these tools are pretty non-technical because you're just speaking to it in plain English. And it
+11:4511 minutes, 45 secondsdoesn't take a long time to learn these tools because you're already used to using AI agents if you watch content like this. And therefore, it gets easier and easier to just swap them in, learn
+11:5411 minutes, 54 secondsthem, and add them in, right? So, you can see, for example, here it's added the schedule section, and we've got it ready to go right here. So, thanks so much for watching. If you want to get my
+12:0112 minutes, 1 secondfull agentic operating system with Deep Sea Carnis and with Hermes, you can get that inside the airoff boardroom. You could build your own with Deep Sea
+12:0912 minutes, 9 secondsCarnis directly as well. I usually spend about 3 to four hours a day improving this. So, if you just want to build something like this, you can, but it takes a long time. If you just want to
+12:1712 minutes, 17 secondsget my setup, it's inside the aircraft boardroom. Uh, also, you can see here the mission control system is set up.
+12:2212 minutes, 22 secondsSo, we can click on allow right now. And then we have that plugin ready to go. I also like the fact that it gives us full visibility into what's being done. So for example, you got the to-dos here.
+12:3212 minutes, 32 secondsAnd then the way that I like to use Hermes if you are going to use it is that you have a system like this where you can basically switch between tabs.
+12:4012 minutes, 40 secondsSo for example, if I have a workflow where I need to do research every day, we've got Hermes Oracle running in the background. If we for example need to analyze my own content, see where we can
+12:4812 minutes, 48 secondsimprove and everything else, then I can have Hermes Muse that's running on a schedule here as well. And then I can actually get the outputs from here for
+12:5512 minutes, 55 secondsexample and plug those directly into something like our workflows on the left hand side here. So thanks for watching.
+13:0413 minutes, 4 secondsIf you like this sort of stuff feel free to check out the profit of boarding inside the community. I personally answer your questions every single day and help you as much as I can inside the classroom. You can get access to all of
+13:1213 minutes, 12 secondsmy best trainings, courses, new updates and the agentic OS. In the calendar you can jump on weekly coaching calls. We have four weekly coaching calls where you get help and support in real time.
+13:2013 minutes, 20 secondsAnd then inside the map, you can meet people in your local area who are building out with AI agents like you. So feel free to get this link in the comments description or go to the AI profitboard.com. Thanks for watching.

@@ -1,0 +1,24 @@
+# Trio validation overlay: expose the three external-agent subagent tools
+# in the headless composition (mirrors the halo-standard preset rows).
+- insert:
+    - id: trio-tool-codex
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: codex
+        toolName: subagent_codex
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+    - id: trio-tool-claude
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: claude-code
+        toolName: subagent_claude_code
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+    - id: trio-tool-opencode
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: acp
+        toolName: subagent_opencode
+        backgroundMode: one-shot
+        maxDepth: provider-managed

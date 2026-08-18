@@ -1,0 +1,42 @@
+# HALO home patch — v2 plan. Provider config lives in settings.yaml, NOT here.
+# Default model route -> local LM Studio brain (row config is exactly these two fields).
+- id: agent-default-model
+  config:
+    provider: lmstudio
+    model: qwen/qwen3.8-27b
+
+# Phase 3: subagent providers (host plane — one registration per process)
+- insert:
+    - id: subagent-codex
+      name: '@deepseek-ai/dsh-subagent-codex'
+    - id: subagent-claude-code
+      name: '@deepseek-ai/dsh-subagent-claude-code'
+    - id: subagent-opencode-acp
+      name: '@deepseek-ai/dsh-subagent-acp'
+      config:
+        providerName: acp
+        command: cmd
+        args: ['/c', 'opencode', 'acp']   # npm shim is .ps1/.cmd — needs cmd /c on Windows
+
+# Phase 3: MCP servers
+- insert:
+    # DISABLED 2026-08-17: @browsermcp/mcp latest crashes on Windows when port
+    # 9009 is free (cmd FOR port-kill hack throws -> recursion -> boot death).
+    # Re-enable after a fixed version or alternative is validated.
+    - id: mcp-browser
+      name: '@deepseek-ai/dsh-mcp-client'
+      disabled: true
+      config:
+        serverName: browser
+        transport: stdio
+        command: npx
+        args: ['@browsermcp/mcp@latest']
+    - id: mcp-memory
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: memory
+        transport: stdio
+        command: npx
+        args: ['-y', '@modelcontextprotocol/server-memory']
+        env:
+          MEMORY_FILE_PATH: 'C:\Users\scott\.dsh\memory\memory.json'

@@ -1,0 +1,6 @@
+DeepSeek Harness Phase 1 pin record — 2026-08-17T14:29:54
+package:   @deepseek-ai/dsh@0.1.0-rc.7
+tarball:   https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.1.0-rc.7.tgz
+integrity: sha512-ZceDCJ8FAywih+USW/OMk9jEhunlvJBGEz4kqrhau23hPzbciOazZrywH0nBRsaalSeAJ1JGBmjtw4OSjToStw==
+shasum:    8a69013c06179d7af437de92fb4a9a2e1fd7d410
+node:      v25.9.0 / npm 11.12.1
