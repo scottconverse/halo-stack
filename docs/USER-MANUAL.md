@@ -51,7 +51,7 @@ flowchart TD
     DSH --> MEM
     DSH --> SKILLS
 
-    MC["Mission Control · :3090<br/>reads native state every 5 s · owns nothing"]
+    MC["Mission Control · :3090<br/>5-tab console + alarm strip<br/>reads native state every 5 s"]
     MC -.observes.-> DSH
     MC -.observes.-> LMS
 ```
@@ -140,12 +140,41 @@ is a hidden process; it dies with logoff/reboot, or leave it running — it idle
   between requests to respect anonymous rate limits.
 - **Session log:** top-right button downloads the full append-only log of any session.
 
+## Mission Control (the operator console)
+
+`http://127.0.0.1:3090` — five tabs behind a master alarm strip (**HARNESS ·
+MODELS · MEMORY · DISK · STREAM**). All green + "All systems nominal" means
+stop reading; any light names its cause and jumps to the right tab.
+
+- **Overview** — services + versions, what's running right now, memory pools
+  (Windows pool / GPU carveout / GPU **shared** — that last one should stay
+  near 0: model bytes in the shared pool is the leak that caused the Aug-16
+  OOM, and it alarms), delta-scan cadence, engine-drift detection, last
+  config validation, throughput vs bench baselines.
+- **Models** — the *entire* on-disk catalog (not just what's loaded) with
+  quant/size/max-context, TTL countdowns on loaded models, and per-model
+  Load (asks for context length) / Unload. Quick buttons for Brain/Worker
+  remain. Amber badge if anything is loaded at ≥200K context (the
+  silent-huge-context trap).
+- **Sessions** — real titles, tokens in/out, TTFT, decode t/s per session;
+  dead drive-root-bug sessions are hidden behind a toggle and badged when
+  shown. Click a row for the full ID and a cockpit link.
+- **Plugins** — all 166 config rows with **plain-language descriptions**
+  (mined from the harness's own package metadata on disk, not invented),
+  live search that matches descriptions too, and abnormal rows sorted to
+  the top in red.
+- **System** — memory/disk gauges, full version + engine list, a
+  **Validate config** button (runs the harness's own `--dump-config` and
+  reports unmatched patch rows), the memory-graph browser with the
+  50-entity upgrade tripwire, and a live LM Studio log tail.
+
 ## Model operations
 
-- **Truth source:** `lms ps --json` (or just look at Mission Control's model card —
+- **Truth source:** `lms ps --json` (or Mission Control's Models tab —
   it uses exactly that). Never trust the REST catalog's quantization field.
-- **Load/unload:** Mission Control buttons — *Load Brain*, *Load Worker*, *Unload
-  Worker*, *Unload All*. The worker auto-unloads after 2 h idle and returns ~16 GB.
+- **Load/unload:** any model in the catalog from Mission Control → Models;
+  quick buttons for *Load Brain*, *Load Worker*, *Unload Worker*, *Unload
+  All*. The worker auto-unloads after 2 h idle and returns ~16 GB.
 - **Sharing:** the cockpit and OpenCode share one brain slot. Simultaneous turns queue —
   nothing breaks, the second one just waits. Watch queue depth in Mission Control.
 
