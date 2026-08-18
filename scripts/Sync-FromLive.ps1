@@ -20,6 +20,8 @@ $map = @(
     @{ src = "$U\.dsh\skills\delta-scan-halo\SKILL.md"; dst = "dsh\skills\delta-scan-halo\SKILL.md" }
     # Shared-root skills (~\.agents\skills — visible to Claude Code AND the harness)
     @{ src = "$U\.agents\skills\reddit-search\SKILL.md"; dst = "agents-skills\reddit-search\SKILL.md" }
+    # Workspace instruction file (auto-loaded by dsh into every session)
+    @{ src = "$U\Desktop\Code\AGENTS.md"; dst = "workspace\AGENTS.md" }
     # LM Studio loader scripts
     @{ src = "$U\.lmstudio\scripts\Load-OpenCode-Qwen.mjs"; dst = "lmstudio\Load-OpenCode-Qwen.mjs" }
     @{ src = "$U\.lmstudio\scripts\Load-Worker-Coder.mjs";  dst = "lmstudio\Load-Worker-Coder.mjs" }
@@ -40,4 +42,11 @@ foreach ($m in $map) {
         Write-Warning "missing live file: $($m.src)"
     }
 }
+Write-Host "`nValidating composed config (dsh --dump-config; watch for 'unmatched' warnings)..."
+$env:DSH_PERMISSION_MODE = 'danger-full-access'
+$dump = npx "@deepseek-ai/dsh@0.1.0-rc.7" web --dump-config 2>&1
+$warnings = $dump | Select-String -Pattern "warn|unmatched"
+if ($warnings) { Write-Warning "CONFIG WARNINGS:"; $warnings | ForEach-Object { Write-Warning $_.Line } }
+else { Write-Host "config composes clean - no unmatched patch targets" }
+
 Write-Host "`nDone. Review with: git -C `"$repo`" diff"

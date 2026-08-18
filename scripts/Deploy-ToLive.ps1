@@ -18,6 +18,7 @@ $map = @(
     @{ src = "dsh\agent-presets\halo-standard\preset.yml";       dst = "$U\.dsh\.agent-presets\halo-standard\preset.yml" }
     @{ src = "dsh\skills\delta-scan-halo\SKILL.md"; dst = "$U\.dsh\skills\delta-scan-halo\SKILL.md" }
     @{ src = "agents-skills\reddit-search\SKILL.md"; dst = "$U\.agents\skills\reddit-search\SKILL.md" }
+    @{ src = "workspace\AGENTS.md";                  dst = "$U\Desktop\Code\AGENTS.md" }
     @{ src = "lmstudio\Load-OpenCode-Qwen.mjs";  dst = "$U\.lmstudio\scripts\Load-OpenCode-Qwen.mjs" }
     @{ src = "lmstudio\Load-Worker-Coder.mjs";   dst = "$U\.lmstudio\scripts\Load-Worker-Coder.mjs" }
     @{ src = "lmstudio\Sweep-MTP.mjs";           dst = "$U\.lmstudio\scripts\Sweep-MTP.mjs" }

@@ -186,6 +186,16 @@ Full bug list with root causes: README §Known issues and `docs/phases/phase3-re
   the two GGUFs, run `scripts\Deploy-ToLive.ps1`, recreate the two desktop shortcuts,
   install per-profile subagent plugins (deploy script prints the command).
 
+## Instruction file
+
+Every cockpit session automatically loads `C:\Users\scott\Desktop\Code\AGENTS.md`
+(dsh's shipped instruction mechanism, 64KB budget) — it carries the workspace
+rule, bug workarounds, search-stack facts, and conduct rules, so fresh sessions
+start informed instead of blind. Edit it there; it syncs to the repo as
+`workspace/AGENTS.md`. See also `AUDIT-redundancy-2026-08-17.md` for what an
+adversarial audit found about this stack's build choices (one refuted claim,
+two fixes, one documented trade-off).
+
 ## Privacy
 
 Nothing in this stack phones home — audited, not assumed. See
