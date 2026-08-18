@@ -72,6 +72,14 @@ reddit.com content — a licensing hole — and Jina's reader is blocked by Redd
 - ACTIONABLE = fixes one of the five known bugs; a dsh release past rc.7 with
   Windows fixes; a quant/model likely to beat current bench numbers at
   equal-or-smaller size; a security issue in anything we run.
+- Memory-layer upgrade watch (assessed 2026-08-17): current stock MCP graph
+  server is fine at small scale but has no semantic retrieval and no
+  cross-process locking. Trigger to act: memory graph exceeds ~50 entities OR
+  recall visibly misses. Shortlisted then: EverMind EverOS (local-first,
+  Markdown-native, cross-agent), dsh-memory-evolve (DSH-native pure plugin),
+  adoresever/graph-memory, volcengine/OpenViking. ANY candidate requires the
+  full telemetry/exfiltration audit before install — memory plugins read
+  everything the agents know.
 - Nemotron worker gate (benched 2026-08-17: DNS — LM Studio v2.28.2 engine
   predates nemotron_h_moe, bare llama.cpp b10472 loads it fine): when an
   LM Studio engine update ships, test-load
