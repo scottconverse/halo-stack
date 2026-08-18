@@ -15,6 +15,7 @@ $map = @(
     @{ src = "dsh\overlays\bench-overlay-trio.yml";      dst = "$U\.dsh\bench-overlay-trio.yml" }
     @{ src = "dsh\agent-presets\halo-standard\agent.cordis.yml"; dst = "$U\.dsh\.agent-presets\halo-standard\agent.cordis.yml" }
     @{ src = "dsh\agent-presets\halo-standard\preset.yml";       dst = "$U\.dsh\.agent-presets\halo-standard\preset.yml" }
+    @{ src = "dsh\skills\delta-scan-halo\SKILL.md"; dst = "$U\.dsh\skills\delta-scan-halo\SKILL.md" }
     @{ src = "lmstudio\Load-OpenCode-Qwen.mjs";  dst = "$U\.lmstudio\scripts\Load-OpenCode-Qwen.mjs" }
     @{ src = "lmstudio\Load-Worker-Coder.mjs";   dst = "$U\.lmstudio\scripts\Load-Worker-Coder.mjs" }
     @{ src = "lmstudio\Sweep-MTP.mjs";           dst = "$U\.lmstudio\scripts\Sweep-MTP.mjs" }

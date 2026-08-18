@@ -14,6 +14,8 @@ $map = @(
     @{ src = "$U\.dsh\bench-overlay-trio.yml";       dst = "dsh\overlays\bench-overlay-trio.yml" }
     @{ src = "$U\.dsh\.agent-presets\halo-standard\agent.cordis.yml"; dst = "dsh\agent-presets\halo-standard\agent.cordis.yml" }
     @{ src = "$U\.dsh\.agent-presets\halo-standard\preset.yml";       dst = "dsh\agent-presets\halo-standard\preset.yml" }
+    # Harness skills
+    @{ src = "$U\.dsh\skills\delta-scan-halo\SKILL.md"; dst = "dsh\skills\delta-scan-halo\SKILL.md" }
     # LM Studio loader scripts
     @{ src = "$U\.lmstudio\scripts\Load-OpenCode-Qwen.mjs"; dst = "lmstudio\Load-OpenCode-Qwen.mjs" }
     @{ src = "$U\.lmstudio\scripts\Load-Worker-Coder.mjs";  dst = "lmstudio\Load-Worker-Coder.mjs" }

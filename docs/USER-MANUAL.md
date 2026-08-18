@@ -76,11 +76,13 @@ Full bug list with root causes: README §Known issues and `docs/phases/phase3-re
 
 ## Maintenance
 
-- **Weekly delta scan:** paste [`HALO-Stack-Monitor-Prompt.md`](HALO-Stack-Monitor-Prompt.md)
-  into a fresh cockpit session. The stack audits its own upstream (harness
-  releases, your five known bugs, new quants, llama.cpp changes, community
-  findings) and tracks scan state in its memory graph. Written by the stack's
-  own model; improved and maintained here.
+- **Weekly delta scan:** type **`/delta-scan-halo`** in a fresh cockpit session.
+  The stack audits its own upstream (harness releases, your five known bugs,
+  new quants, llama.cpp changes, community findings via Exa) and tracks scan
+  state in its memory graph. Installed as a harness skill at
+  `~\.dsh\skills\delta-scan-halo\`; prompt version kept in
+  [`HALO-Stack-Monitor-Prompt.md`](HALO-Stack-Monitor-Prompt.md) as the
+  reference source. Originally written by the stack's own model.
 
 - **After any live config change** (settings.yaml, patch, preset, launcher, loader):
   run `scripts\Sync-FromLive.ps1`, review `git diff`, commit with the reason. That's the
