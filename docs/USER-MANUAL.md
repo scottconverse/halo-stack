@@ -13,6 +13,89 @@ Daily operation of the local AI stack. For design rationale and bench data, see 
 | LM Studio inference server | `http://127.0.0.1:1234` | Runs as a service at login |
 | OpenCode | its own app | On demand (autostart removed on purpose) |
 
+## Architecture
+
+Two interactive surfaces share one inference server; the harness owns
+orchestration; a thin dashboard watches everything and owns nothing.
+
+```mermaid
+flowchart TD
+    OP(["Operator — two desktop icons, zero terminals"])
+
+    OP --> DSH
+    OP --> OC
+
+    subgraph INTERACTIVE["Interactive surfaces"]
+        DSH["DeepSeek Harness cockpit · :3080<br/>pinned 0.1.0-rc.7 · halo-standard preset<br/>full-drive access via one env var"]
+        OC["OpenCode<br/>independent sibling UI<br/>same local model + cloud routes"]
+    end
+
+    DSH --> LMS
+    OC --> LMS
+
+    subgraph INFERENCE["One inference server — one iGPU, one memory bus"]
+        LMS["LM Studio API · :1234"]
+        LMS --> BRAIN["BRAIN · Qwen3.8-27B Q5_K_XL<br/>resident 21 GB · 65,536 ctx · vision<br/>prefill cached across turns (8.1×)"]
+        LMS --> WORKER["WORKER · Qwen3 Coder 30B MoE<br/>on-demand · 2 h TTL · ~16 GB returned idle<br/>fan-out at 4.3× task speed"]
+    end
+
+    subgraph REACH["Reach (from any cockpit session)"]
+        SUB["Subagents<br/>Codex · Claude Code · OpenCode (ACP)"]
+        WEB["Web<br/>Exa search + fetch (keyed MCP)<br/>Reddit via RSS skill · Jina fallback reader"]
+        MEM["Memory graph<br/>survives sessions and reboots"]
+        SKILLS["Skills<br/>/delta-scan-halo · /reddit-search"]
+    end
+
+    DSH --> SUB
+    DSH --> WEB
+    DSH --> MEM
+    DSH --> SKILLS
+
+    MC["Mission Control · :3090<br/>reads native state every 5 s · owns nothing"]
+    MC -.observes.-> DSH
+    MC -.observes.-> LMS
+```
+
+**Why it's fast despite slow silicon** — the request shape is the load-bearing
+decision. Every harness request is a byte-exact extension of the previous one,
+so the expensive prompt-reading step (prefill) is paid once per session, not
+every turn:
+
+```mermaid
+sequenceDiagram
+    participant S as Session
+    participant L as LM Studio (KV cache)
+    S->>L: Turn 1 — system + tools + message (≈10K tok)
+    Note over L: cold prefill ≈ 2 min (once)
+    L-->>S: reply
+    S->>L: Turn 2 — same prefix + new content
+    Note over L: cache hit — prefill in seconds (8.1× faster)
+    L-->>S: reply
+    S->>L: /compact (~52K tok) — history → checkpoint
+    Note over L: one planned re-prefill, then cached again
+    L-->>S: continues with full working knowledge
+```
+
+**How the launcher boots everything in the right order** (the desktop icon):
+
+```mermaid
+flowchart LR
+    A["Double-click<br/>DeepSeek Harness"] --> B{":3080 already<br/>listening?"}
+    B -- yes --> Z["Open browser — done"]
+    B -- no --> C["Ensure LM Studio<br/>server is up"]
+    C --> D{"Q5 brain<br/>resident?"}
+    D -- no --> E["Load via pinned<br/>loader script"]
+    D -- yes --> F
+    E --> F["Start harness<br/>(pinned npx)"]
+    F --> G["Wait until :3080<br/>answers (≤3 min cold)"]
+    G --> Z
+```
+
+Diagrams render on GitHub's repo view. The full architecture rationale —
+source-level findings, config composition, permission model, bench data —
+lives in the [build log](https://quartz-entry-ptf2.here.now/) (archived here
+as `build-log-snapshot-2026-08-17.html`).
+
 ## Starting and stopping
 
 **Start:** double-click **DeepSeek Harness**. The launcher checks LM Studio, loads the
