@@ -19,7 +19,9 @@ llm-pi-ai:
           reasoningEfforts:
             low: low
             medium: medium
-            high: xhigh
+            # model has no real "high" tier (low/medium/xhigh only); xhigh burns
+            # 17-22K thinking tokens/turn on this box — opt-in via xhigh only
+            high: medium
             xhigh: xhigh
         - id: qwen3-coder-30b-a3b-instruct
           name: Qwen3 Coder 30B MoE — on-demand worker
