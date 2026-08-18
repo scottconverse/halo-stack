@@ -163,6 +163,8 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
     <li><b>Subagent provider plugins are per-profile installs</b> with an undeclared peer dependency — installed explicitly into each profile.</li>
     <li><b>Chrome auto-translate rewrites the live DOM</b> and breaks streaming render — disabled for the cockpit's origin.</li>
   </ul>
+  <h2 style="margin-top:48px">Telemetry: audited, not assumed</h2>
+  <p class="lede">Because "runs locally" should be a verified claim, all 199 installed DeepSeek packages were swept — code <em>and</em> config — the telemetry subsystem read at source, and the live processes' sockets inspected. Findings: the Qwen models are inert weights executed by LM Studio (no Qwen code runs at all); the harness ships exactly one telemetry exporter, <strong>default DISABLED</strong>, and the disabled path constructs no telemetry SDK whatsoever — there is nothing in memory capable of sending. No third-party analytics of any kind. The running processes hold exactly one connection: localhost LM Studio. The stack's weekly self-audit skill re-checks telemetry defaults on every upstream release before any upgrade. Full evidence ships in the repository (<code>docs/AUDIT-telemetry-2026-08-17.md</code>).</p>
   <p class="lede" style="margin-top:26px">Deliberately not included, for now: the Hermes operations plane (cold-session cron and phone messaging — parked until the need justifies a second always-on gateway), self-hosted SearXNG search (evaluated; keyless Exa chosen for zero moving parts, with the sovereign path documented), and any custom plugins (nothing shipped has failed yet).</p>
 </section>
 

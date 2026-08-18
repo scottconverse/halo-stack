@@ -97,6 +97,16 @@ Full bug list with root causes: README §Known issues and `docs/phases/phase3-re
   the two GGUFs, run `scripts\Deploy-ToLive.ps1`, recreate the two desktop shortcuts,
   install per-profile subagent plugins (deploy script prints the command).
 
+## Privacy
+
+Nothing in this stack phones home — audited, not assumed. See
+[AUDIT-telemetry-2026-08-17.md](AUDIT-telemetry-2026-08-17.md) for the full sweep
+(all DeepSeek packages, telemetry source read, live socket proof). Short version:
+Qwen models are inert weights; the harness's telemetry exporter ships DISABLED and
+builds no sending machinery at all; the only network touches are ones you chose
+(Exa search, subagents on your own auth, npm installs). `/delta-scan-halo` guards
+the telemetry default on every future release.
+
 ## Parked, by choice
 
 - **Hermes operations plane** — cold-session cron + phone messaging; revisit when

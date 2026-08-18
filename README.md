@@ -33,6 +33,17 @@ auth files are deliberately excluded from sync.
   install the per-profile subagent plugins (command printed by the deploy script),
   double-click **DeepSeek Harness**. Ten minutes to a working cockpit.
 
+## Telemetry & privacy
+
+Audited 2026-08-17 (full method and evidence: [docs/AUDIT-telemetry-2026-08-17.md](docs/AUDIT-telemetry-2026-08-17.md)):
+all 199 installed DeepSeek packages swept (code + config), telemetry subsystem read at source,
+live sockets inspected. **Nothing phones home.** Qwen GGUFs are inert weights executed by
+LM Studio (no Qwen code runs). The harness's one telemetry exporter defaults to DISABLED —
+verified in source to construct no SDK at all — and both enable switches are unset here.
+Zero third-party analytics. Live harness processes hold exactly one connection: localhost
+LM Studio. The `/delta-scan-halo` skill re-checks telemetry defaults on every future release
+before any re-pin.
+
 ## Known rc.7 Windows issues (worked around in these configs)
 
 1. `@browsermcp/mcp` crashes harness boot when port 9009 is free → row disabled.
