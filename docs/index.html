@@ -84,7 +84,6 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
   <div class="stat"><b>90.9 tok/s</b><span>worker decode; 615&nbsp;tok/s prefill — measured, not estimated</span></div>
   <div class="stat"><b>65,536</b><span>token context, with proven continuity across forced compaction and an OS reboot</span></div>
   <div class="stat"><b>$0</b><span>marginal cost per token for all daily coding — the models live on the machine</span></div>
-  <div class="stat"><b>12 hours</b><span>of research, cross-model reviews, coding, breakages, and fixes — pushed to finished by an operator who wouldn't defer the last mile</span></div>
   <div class="stat"><b>2 machines</b><span>the same repo's deploy pipeline installed the full stack on an RTX&nbsp;5070&nbsp;Ti box — harness coding task 73&nbsp;s there vs 176&nbsp;s on HALO, three measurement passes replicated</span></div>
 </div>
 
@@ -157,7 +156,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
 
 <section id="cordis">
   <h2>The kernel's formal foundation, put to work</h2>
-  <p class="lede">DeepSeek Harness runs on the Cordis kernel — <em>"A Programming Paradigm for Spatiotemporal Composability"</em> (Shi, Zhang, Cui — Peking University / DeepSeek-AI) is the paper behind it: revertible effects and reactive coeffects, with a confluence theorem guaranteeing the running system always settles into the state a from-scratch config assembly would produce. Full 88-page read, six improvements derived and applied and verified on this machine the same day.</p>
+  <p class="lede">DeepSeek Harness runs on the Cordis kernel — <em>"A Programming Paradigm for Spatiotemporal Composability"</em> (Shi, Zhang, Cui — Peking University / DeepSeek-AI) is the paper behind it: revertible effects and reactive coeffects, with a confluence theorem guaranteeing the running system always settles into the state a from-scratch config assembly would produce. Full 88-page read; six improvements derived, applied, and verified on this machine.</p>
   <div class="cards">
     <div class="card"><h3>Live config reconciliation</h3>
       <p>Proven by experiment: a plugin row toggled in the live config activated ~20 s after save — both directions, zero restart, zero session disturbance. The restart ritual is retired; restarts remain only for harness upgrades and one Windows deadlock workaround.</p></div>

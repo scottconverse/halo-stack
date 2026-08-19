@@ -3,7 +3,7 @@
 **Status: REAL install proven.** `Deploy-ToLive.ps1` ran clean end-to-end three
 times on the target box; the live stack (loaders, launcher, desktop icons,
 Mission Control, subagent plugins) is installed and serving there. This
-supersedes the earlier same-day sandbox-only version of this document, which
+supersedes the earlier sandbox-only version of this document, which
 was correctly rejected as not testing the product.
 
 Report below is the TESTER box's own record, verbatim (operator-prompted,
@@ -146,7 +146,7 @@ word-counting inside the reasoning block (model behavior, not KV corruption).
 
 ## Round 2 — REAL install (Deploy-ToLive) and full re-run
 
-Done same-day after the sandbox proof was (rightly) rejected as not testing the
+Done after the sandbox proof was (rightly) rejected as not testing the
 product. Everything below ran on the **live install**: `~\.dsh`, deployed
 loaders, Mission Control, desktop icons — no sandbox.
 
@@ -210,7 +210,7 @@ loaders, Mission Control, desktop icons — no sandbox.
   16 GiB discrete card). And one footgun — the Models tab lists the
   **federated remote device's models with live Load/Unload buttons**,
   indistinguishable from local ones; an Unload click here would kill the HALO
-  box's active brain. *(Both fixed in the repo's Mission Control same day:
+  box's active brain. *(Both fixed in the repo's Mission Control:
   VRAM capacity now read from the driver registry, remote models show no
   controls, and the unload endpoint refuses remote identities server-side.)*
 - **Download integrity:** two 17 GB worker-GGUF downloads came back

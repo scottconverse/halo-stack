@@ -438,7 +438,7 @@ backup stage had captured every one of those six clobbered files seconds
 before the overwrite, so recovery was a copy-back, not a re-do — the
 transactional design paid for itself against its own test. The missing
 piece was drift *detection*, so stage 1 above (the drift guard) was added
-the same day and verified against the real post-incident state — it caught
+and verified against the real post-incident state — it caught
 exactly the six affected files.
 
 **Telemetry, audited clean:** all 199 installed DeepSeek-authored packages

@@ -74,7 +74,7 @@ not a from-scratch design.
   `halo-standard` as the default agent preset.
 - **Cordis kernel formal-model audit**: full read of the Cordis paper
   ("A Programming Paradigm for Spatiotemporal Composability"), six
-  improvements derived and applied same-day — see
+  improvements derived and applied — see
   `docs/AUDIT-cordis-concepts-2026-08-18.md`.
 - **Config reconciliation proven live**: toggling a `cordis.patch.yml` row
   against a serving harness reconciles the plugin fiber in ~20 seconds,
@@ -175,7 +175,7 @@ not a from-scratch design.
   deploy's own first live test overwrote six files' worth of unsynced live
   edits with older repo copies; the backup stage had already captured
   every one of them, so recovery was a copy-back. The missing drift
-  *detection* was added the same day as the deploy's stage 1 and verified
+  *detection* was then added as the deploy's stage 1 and verified
   against the real incident state.
 - **Telemetry audit, clean**: all 199 installed DeepSeek-authored packages
   swept for external hosts, the telemetry exporter's disabled code path
