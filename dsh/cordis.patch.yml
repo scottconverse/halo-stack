@@ -3,7 +3,9 @@
 - id: agent-default-model
   config:
     provider: lmstudio
-    model: qwen/qwen3.8-27b
+    # 5070TI ADAPTATION: unsuffixed identity resolves to the FEDERATED HALO
+    # device on this box — must stay local.
+    model: qwen/qwen3.8-27b-5070ti
 
 # Phase 3: subagent providers (host plane — one registration per process)
 - insert:

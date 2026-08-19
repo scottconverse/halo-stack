@@ -1,11 +1,17 @@
-# HALO workspace — operating instructions
+# HALO workspace — operating instructions (5070Ti box)
+
+SCOPE: these instructions are for HALO-stack (DeepSeek Harness) sessions only.
+If you are a different agent working in this directory (e.g. CivicCast work),
+ignore this file.
 
 You are running inside the HALO stack: DeepSeek Harness (pinned 0.1.0-rc.7) on
-Windows 11 / AMD Strix Halo, brain = Qwen3.8-27B Q5 via LM Studio at :1234,
-on-demand MoE worker, full-drive access. The stack's complete documentation,
-configs, and measured benchmarks live in `C:\Users\scott\Desktop\Code\halo-stack`
-(public: github.com/scottconverse/halo-stack). Read its docs before re-deriving
-anything about this machine.
+Windows 11 / RTX 5070 Ti 16GB (CUDA), brain = Qwen3.8-27B Q3_K_XL (32K ctx,
+KV q8_0) via LM Studio at :1234, on-demand MoE worker, full-drive access. The
+stack's complete documentation, configs, and measured benchmarks live in
+`C:\Users\scott\Desktop\CODE\halo-stack` (public:
+github.com/scottconverse/halo-stack; this box's numbers:
+`TESTER-5070ti-bench.md`). Read its docs before re-deriving anything about
+this machine.
 
 ## Hard-won operational facts (measured — do not re-litigate)
 - **Workspace:** always Desktop-Code. Never select C-Drive as a workspace —
@@ -20,9 +26,11 @@ anything about this machine.
   workspace titles unclickable, npm `.ps1` shims need `cmd /c`, subagent
   provider plugins are per-profile installs, sessions >1 MB may deadlock the
   web server (symptom: :3080 listening but frozen — tell the operator).
-- **Speed shape:** your first turn in a session pre-reads ~10K tokens (slow);
-  later turns ride the prefix cache. Long sessions decode slower — that's
-  Vulkan at depth, not a fault.
+- **Speed shape:** your first turn in a session pre-reads ~10K tokens; on this
+  box prefill is fast (~1,500 tok/s) and decode holds 25–42 tok/s to 30K depth
+  with KV q8_0. If decode ever crawls (<10 tok/s), suspect the NVIDIA driver
+  parking memory clocks (P3/7001MHz) or a GPU shared-pool spill — check
+  `nvidia-smi` and `lms ps` before blaming the stack.
 - **Config is live:** the harness hot-reconciles `~\.dsh\cordis.patch.yml`
   and `settings.yaml` within ~20 s of a save — never restart the server for
   a config change, and treat config edits as immediately production-affecting.

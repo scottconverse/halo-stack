@@ -2,7 +2,8 @@ llm-pi-ai:
   providers:
     lmstudio:
       # permanent id — sessions embed it, never rename
-      displayName: LM Studio (HALO)
+      # 5070TI ADAPTATION: local model identity + 32K ctx (see TESTER-5070ti-bench.md)
+      displayName: LM Studio (5070TI)
       api: openai-completions
       baseURL: http://127.0.0.1:1234/v1
       apiKeyEnv: LMSTUDIO_API_KEY
@@ -11,9 +12,9 @@ llm-pi-ai:
         supportsReasoningEffort: true
       reasoning: medium # Qwen 3.8 defaults to xhigh and overthinks (Willison 2026-08-16)
       models:
-        - id: qwen/qwen3.8-27b
-          name: Qwen3.8 27B Q5 — daily brain
-          contextWindow: 65536
+        - id: qwen/qwen3.8-27b-5070ti
+          name: Qwen3.8 27B Q3_K_XL — daily brain (5070Ti)
+          contextWindow: 32000
           maxTokens: 8192
           input: [ text, image ]
           reasoningEfforts:

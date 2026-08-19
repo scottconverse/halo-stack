@@ -4,7 +4,7 @@
     "opencode-claude-auth@latest",
     "opencode-antigravity-auth@1.6.0"
   ],
-  "model": "lmstudio/qwen/qwen3.8-27b",
+  "model": "lmstudio/qwen/qwen3.8-27b-5070ti",
   "small_model": "opencode/nemotron-3.5-lightning-free",
   "default_agent": "full-coding",
   "tool_output": {
@@ -28,19 +28,19 @@
         "chunkTimeout": 300000
       },
       "models": {
-        "qwen/qwen3.8-27b": {
-          "name": "Qwen3.8 27B UD-Q5_K_XL — Local Daily Driver",
+        "qwen/qwen3.8-27b-5070ti": {
+          "name": "Qwen3.8 27B UD-Q3_K_XL — Local Daily Driver (5070Ti)",
           "attachment": true,
           "reasoning": true,
           "temperature": true,
           "tool_call": true,
           "interleaved": "reasoning_content",
           "modalities": {
-            "input": ["text", "image"],
+            "input": ["text"],
             "output": ["text"]
           },
           "limit": {
-            "context": 65536,
+            "context": 32000,
             "output": 8192
           },
           "options": {
