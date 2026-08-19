@@ -921,6 +921,15 @@ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.82rem;margin
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
 .card h2{font-size:.92rem;margin:0 0 10px;color:#dcecff}
 .card.wide{grid-column:1/-1}
+.card.span2{grid-column:span 2}
+/* One explicit statement of what the machine is doing, so a screen full of
+   zeros reads as "idle" rather than "broken". */
+.hero-state{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 16px;padding:12px 17px;margin-bottom:14px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;font-size:.92rem}
+.hero-state .st{font-weight:800;letter-spacing:.08em;font-size:.95rem}
+.hero-state .st.idle{color:#7f9bb5}.hero-state .st.busy{color:var(--amber)}.hero-state .st.down{color:var(--red)}
+/* Severity belongs on the VALUES, not only the top strip: with everything
+   green there is nothing to scan for. */
+.v-warn{color:var(--amber)}.v-bad{color:var(--red)}
 .vrange{float:right;display:flex;gap:4px}
 .vrange button{margin:0;padding:3px 9px;font-size:.72rem}
 .vrange button.on{background:#1c5570;border-color:var(--teal);color:#fff}
@@ -1003,17 +1012,16 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 </nav>
 
 <div id="tab-overview" class="tabpanel">
+<div id="ov-hero" class="hero-state"></div>
 <div class="grid">
 <div class="card"><h2>Services</h2><div id="ov-services"></div>
-<button onclick="act('start-cockpit')">Start cockpit</button>
-<a href="http://127.0.0.1:3080" target="_blank"><button type="button">Open cockpit</button></a>
-<div class="mut" id="ov-versions" style="margin-top:8px"></div></div>
-<div class="card"><h2>Active now</h2><div id="ov-active"></div></div>
+<div id="ov-svcbtn" style="margin-top:4px"></div></div>
+<div class="card"><h2>Activity</h2><div id="ov-activity"></div></div>
 <div class="card"><h2>Memory pools</h2><div id="ov-pools"></div></div>
 <div class="card"><h2>Cadence &amp; drift</h2><div id="ov-cadence"></div></div>
-<div class="card"><h2>Today</h2><div id="ov-today"></div></div>
-<div class="card"><h2>Throughput</h2><div id="ov-throughput"></div></div>
-<div class="card"><h2>Fleet (LM Link)</h2><div id="ov-fleet"></div></div>
+<div class="card span2"><h2>Fleet (LM Link)</h2><div id="ov-fleet"></div></div>
+<div class="card"><h2>Disk</h2><div id="ov-disk"></div></div>
+<div class="card"><h2>Knowledge graph</h2><div id="ov-knowledge"></div></div>
 <div class="card wide">
 <h2>Machine vitals
 <span class="vrange">
@@ -1107,6 +1115,13 @@ It's snapshotted hourly by the scheduled task <span class="mono">HALO Memory Sna
 <script>
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function fmtK(n){return n==null?'&mdash;':(Math.round(n/1024*10)/10)+'K'}
+// One date format everywhere. Adjacent rows used to mix "2026-08-17" with
+// "8/18/2026, 1:07:43 AM", which reads as unfinished.
+function fmtStamp(ms){
+  if(!ms) return '&mdash;';
+  var d=new Date(ms), p=function(n){return (n<10?'0':'')+n};
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+}
 function fmtRel(ms){
   if(!ms) return '&mdash;';
   var d=Date.now()-ms; if(d<0) d=0;
@@ -1256,55 +1271,93 @@ function renderOverview(s){
     ['lms CLI',s.services.lmsCli],
   ];
   document.getElementById('ov-services').innerHTML=svcRows.map(function(r){
-    return '<div class="row"><span><span class="dot '+(r[1]?'up':'down')+'"></span>'+r[0]+'</span><span class="k">'+(r[1]?'up':'down')+'</span></div>';
+    return '<div class="row"><span><span class="dot '+(r[1]?'up':'down')+'"></span>'+r[0]+'</span><span class="k '+(r[1]?'':'v-bad')+'">'+(r[1]?'up':'down')+'</span></div>';
   }).join('');
-  var vparts=['dsh pin '+esc(s.services.dshVersionPin)];
-  vparts.push('LM Studio '+esc(s.services.lmStudioVersion||'unknown'));
-  vparts.push('lms '+esc(s.services.lmsCliVersion||'unknown'));
-  vparts.push('engine '+esc(s.services.engine||'unknown')+(s.services.engineChanged?' <span class="badge badge-teal">changed since last look</span>':''));
-  vparts.push('node '+esc(s.node));
-  document.getElementById('ov-versions').innerHTML=vparts.join(' &middot; ');
+  // State-aware: offering "Start" for a service already up is noise. Version
+  // pins live on the System tab; a status card should carry status.
+  document.getElementById('ov-svcbtn').innerHTML=
+    (s.services.cockpit
+      ? '<a href="http://127.0.0.1:3080" target="_blank"><button type="button">Open cockpit</button></a>'
+      : '<button onclick="act(&quot;start-cockpit&quot;)">Start cockpit</button>')+
+    (s.services.engineChanged?' <span class="badge badge-amber">engine changed since last look</span>':'');
 
-  var activeHtml='';
+  // ── hero state line ──────────────────────────────────────────────────
+  // Three cards used to report zeros while another reported a decode rate,
+  // which reads as broken data. One sentence reconciles them.
   var running=s.sessions.filter(function(x){return x.running});
-  activeHtml+='<div class="row"><span class="k">running sessions</span><span>'+running.length+'</span></div>';
-  activeHtml+=running.map(function(x){return '<div class="row"><span><span class="dot busy"></span>'+esc(x.title||x.id)+'</span><span class="k">'+esc(x.preset||'')+'</span></div>'}).join('');
-  activeHtml+='<div class="row"><span class="k">active jobs</span><span>'+s.jobs.active.length+'</span></div>';
-  activeHtml+='<div class="row"><span class="k">queued inputs</span><span>'+s.jobs.queuedInputs+'</span></div>';
-  document.getElementById('ov-active').innerHTML=activeHtml;
+  var genModels=s.models.filter(function(m){return m.status==='generating'});
+  var withStats=s.sessions.filter(function(x){return x.decodeTps!=null}).sort(function(a,b){return b.mtime-a.mtime});
+  var latest=withStats[0];
+  var localRes=s.models.filter(function(m){return m.originKind==='local'});
+  var hero='',cls='idle',word='IDLE';
+  if(!s.services.cockpit){ cls='down'; word='COCKPIT DOWN'; }
+  else if(genModels.length||running.length||s.jobs.active.length){ cls='busy'; word='WORKING'; }
+  hero='<span class="st '+cls+'">'+word+'</span>';
+  if(cls==='busy'){
+    var bits=[];
+    if(genModels.length) bits.push(genModels.map(function(m){return esc(m.identifier)}).join(', ')+' generating');
+    if(running.length) bits.push(running.length+' session'+(running.length>1?'s':'')+' running');
+    if(s.jobs.active.length) bits.push(s.jobs.active.length+' job'+(s.jobs.active.length>1?'s':''));
+    hero+='<span>'+bits.join(' &middot; ')+'</span>';
+  } else if(cls==='idle'){
+    hero+='<span class="mut">last inference '+(latest?fmtRel(latest.mtime):'not yet this boot')+'</span>';
+  }
+  hero+='<span class="mut">'+(localRes.length
+    ? localRes.map(function(m){return esc(m.identifier)+' resident &middot; ctx '+(m.context||0).toLocaleString()}).join(' &nbsp;|&nbsp; ')
+    : 'no local model resident')+'</span>';
+  if(s.jobs.queuedInputs) hero+='<span class="v-warn">'+s.jobs.queuedInputs+' queued</span>';
+  document.getElementById('ov-hero').innerHTML=hero;
 
   var winPct=Math.min(100,Math.round(s.ram.usedGiB/s.ram.totalGiB*100));
   var haveCarve=s.gpu.carveoutGiB!=null;
   var gpuPct=haveCarve?Math.min(100,Math.round(s.gpu.dedicatedGiB/s.gpu.carveoutGiB*100)):0;
-  var sharedBad=s.gpu.sharedGiB>8;
+  var sharedCls=s.gpu.sharedGiB>8?'v-bad':(s.gpu.sharedGiB>3?'v-warn':'');
+  var freeCls=s.ram.freeGiB<6?'v-bad':(s.ram.freeGiB<12?'v-warn':'');
+  // Proportion lives here; the vitals strip owns the trend and the raw
+  // current levels, so this card shows capacity relationships only.
   document.getElementById('ov-pools').innerHTML=
-    '<div class="row"><span class="k">Windows pool</span><span>'+s.ram.usedGiB+' / '+s.ram.totalGiB+' GiB</span></div>'+
+    '<div class="row"><span class="k">Windows pool</span><span class="'+freeCls+'">'+s.ram.freeGiB+' GiB free of '+s.ram.totalGiB+'</span></div>'+
     '<div class="bar"><i style="width:'+winPct+'%"></i></div>'+
-    '<div class="row" style="margin-top:8px"><span class="k">GPU dedicated</span><span>'+s.gpu.dedicatedGiB+(haveCarve?' / '+s.gpu.carveoutGiB+' GiB carveout':' GiB (carveout unknown)')+'</span></div>'+
+    '<div class="row" style="margin-top:8px"><span class="k">GPU carveout</span><span>'+(haveCarve?gpuPct+'% used of '+s.gpu.carveoutGiB+' GiB':'capacity unknown')+'</span></div>'+
     (haveCarve?'<div class="bar"><i style="width:'+gpuPct+'%"></i></div>':'')+
-    '<div class="row" style="margin-top:8px"><span class="k">GPU shared</span><span'+(sharedBad?' style="color:var(--amber)"':'')+'>'+s.gpu.sharedGiB+' GiB</span></div>'+
-    '<div class="mut" style="margin-top:2px">should stay near 0 &mdash; model bytes belong in the carveout</div>';
+    '<div class="row" style="margin-top:8px"><span class="k">GPU shared</span><span class="'+sharedCls+'">'+s.gpu.sharedGiB+' GiB'+(sharedCls?' &mdash; leaking':'')+'</span></div>'+
+    '<div class="mut" style="margin-top:2px">shared should stay near 0 &mdash; model bytes belong in the carveout</div>';
 
   var due=s.memory;
   var dueTxt=due.dueDate?('due '+(due.dueInDays<0?('overdue '+Math.abs(due.dueInDays)+'d'):due.dueInDays+'d')):'no scan recorded';
   document.getElementById('ov-cadence').innerHTML=
     '<div class="row"><span class="k">last delta-scan</span><span>'+esc(due.lastScanDate||'—')+'</span></div>'+
-    '<div class="row"><span class="k">next scan</span><span'+(due.dueInDays!=null&&due.dueInDays<0?' style="color:var(--amber)"':'')+'>'+esc(dueTxt)+'</span></div>'+
-    '<div class="row"><span class="k">engine</span><span>'+esc(s.services.engine||'unknown')+(s.services.engineChanged?' <span class="badge badge-teal">changed</span>':'')+'</span></div>'+
-    '<div class="row"><span class="k">last config validation</span><span>'+(s.validation?(s.validation.ok?'<span style="color:var(--green)">ok</span>':'<span style="color:var(--red)">issues</span>')+' &middot; '+new Date(s.validation.when).toLocaleString():'never run')+'</span></div>';
+    '<div class="row"><span class="k">next scan</span><span class="'+(due.dueInDays!=null&&due.dueInDays<0?'v-warn':'')+'">'+esc(dueTxt)+'</span></div>'+
+    '<div class="row"><span class="k">engine</span><span>'+esc(s.services.engine||'unknown')+'</span></div>'+
+    '<div class="row"><span class="k">last config validation</span><span>'+(s.validation?(s.validation.ok?'<span style="color:var(--green)">ok</span>':'<span class="v-bad">issues</span>')+' &middot; '+fmtStamp(s.validation.when):'never run')+'</span></div>';
 
-  document.getElementById('ov-today').innerHTML=
-    '<div class="row"><span class="k">sessions touched today</span><span>'+s.today.count+'</span></div>'+
-    '<div class="row"><span class="k">kTok in / out</span><span>'+s.today.kTokIn+'K / '+s.today.kTokOut+'K</span></div>';
+  // Activity: what used to be two half-empty cards (Today + Throughput),
+  // with the hairline sparkline dropped since the vitals strip owns trend.
+  var tpsCls=latest&&latest.decodeTps<18?'v-warn':'';
+  document.getElementById('ov-activity').innerHTML=
+    '<div class="row"><span class="k">sessions today</span><span>'+s.today.count+'</span></div>'+
+    '<div class="row"><span class="k">kTok in / out today</span><span>'+s.today.kTokIn+'K / '+s.today.kTokOut+'K</span></div>'+
+    (latest
+      ? '<div class="row"><span class="k">decode, last run</span><span class="'+tpsCls+'">'+latest.decodeTps+' t/s <span class="mut">vs 26.9 base</span></span></div>'+
+        '<div class="row"><span class="k">TTFT, last run</span><span>'+(latest.ttftS!=null?latest.ttftS+'s':'&mdash;')+' <span class="mut">vs 181 t/s prefill</span></span></div>'
+      : '<div class="row"><span class="k">decode</span><span class="mut">no run with stats yet</span></div>');
 
-  var withStats=s.sessions.filter(function(x){return x.decodeTps!=null}).sort(function(a,b){return b.mtime-a.mtime});
-  var latest=withStats[0];
-  var spark=sparkSvg(s.historySpark);
-  document.getElementById('ov-throughput').innerHTML= latest?
-    '<div class="row"><span class="k">decode t/s</span><span>'+latest.decodeTps+' <span class="mut">(baseline 26.9)</span></span></div>'+
-    '<div class="row"><span class="k">TTFT</span><span>'+(latest.ttftS!=null?latest.ttftS+'s':'&mdash;')+' <span class="mut">(prefill baseline 181 t/s)</span></span></div>'+
-    spark
-    : '<div class="mut">no session with stats yet</div>'+spark;
+  var dFree=s.disk.ok?s.disk.freeGB:null;
+  var diskCls=dFree==null?'':(dFree<50?'v-bad':(dFree<150?'v-warn':''));
+  var diskPct=s.disk.ok&&s.disk.totalGB?Math.round(s.disk.usedGB/s.disk.totalGB*100):0;
+  document.getElementById('ov-disk').innerHTML=s.disk.ok?
+    '<div class="row"><span class="k">free</span><span class="'+diskCls+'">'+s.disk.freeGB+' GB</span></div>'+
+    '<div class="bar '+(diskCls==='v-bad'?'red':(diskCls==='v-warn'?'amber':''))+'"><i style="width:'+diskPct+'%"></i></div>'+
+    '<div class="row" style="margin-top:8px"><span class="k">used / total</span><span>'+s.disk.usedGB+' / '+s.disk.totalGB+' GB</span></div>'+
+    '<div class="mut" style="margin-top:2px">models and session logs live here</div>'
+    : '<div class="mut">disk read failed</div>';
+
+  var mem=s.memory||{};
+  var memCls=mem.entities>=mem.tripwire?'v-warn':'';
+  document.getElementById('ov-knowledge').innerHTML=
+    '<div class="row"><span class="k">entities</span><span class="'+memCls+'">'+mem.entities+' / '+mem.tripwire+' tripwire</span></div>'+
+    '<div class="row"><span class="k">graph</span><span><a href="#memory" onclick="showTab(&quot;memory&quot;)">open the memory graph</a></span></div>'+
+    '<div class="mut" style="margin-top:2px">what the local models remember across sessions; snapshotted hourly</div>';
 
   var fc=s.fleet||{};
   var ac=fc.accountCache||{};
@@ -2389,6 +2442,30 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404); res.end('not found');
   } catch (e) { res.writeHead(500); res.end(String(e)); }
 });
+// The whole UI script is a string inside this file, so a syntax error in it
+// is invisible to `node --check` and ships as a BLANK PAGE that still returns
+// HTTP 200. Twice now that has been an escaped quote eaten by the template
+// literal. Parse it at boot and refuse to pretend everything is fine.
+(function validatePageScript() {
+  const m = PAGE.match(/<script>([\s\S]*?)<\/script>/);
+  if (!m) { console.error('FATAL: no inline script found in PAGE'); process.exit(1); }
+  try {
+    new Function(m[1]);
+  } catch (e) {
+    console.error('FATAL: the UI script does not parse — the page would render blank.');
+    console.error('  ' + e.message);
+    const line = String(e.stack || '').match(/<anonymous>:(\d+)/);
+    if (line) {
+      const src = m[1].split('\n');
+      const n = Number(line[1]) - 2;
+      for (let i = Math.max(0, n - 2); i < Math.min(src.length, n + 1); i++) {
+        console.error(`  ${i + 1}: ${src[i].trim().slice(0, 150)}`);
+      }
+    }
+    process.exit(1);
+  }
+})();
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Mission Control on http://127.0.0.1:${PORT}`);
   appendHistory();
