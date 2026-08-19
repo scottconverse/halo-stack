@@ -403,6 +403,14 @@ async function listSessionsApi(limit = 50) {
       const v = s.projections?.values || {};
       const st = v.sessionStats || {};
       const tk = v.tokenUsage || {};
+      // Context fill: the single number that predicts the output-token wall.
+      // The harness tracks it (dsh-token-meter's contextPressure projection);
+      // MC fetched it in this same block and ignored it until 2026-08-19.
+      // projectedTokens = last request's prompt + surface movement since, so
+      // it is the live "how full am I", not a per-turn total.
+      const cp = v.contextPressure || {};
+      const ctxUsed = cp.projectedTokens ?? cp.pressureTokens ?? null;
+      const ctxWindow = cp.contextWindow || null;
       const workspace = wsTitle.get(wsOfSession.get(s.sessionId)) || s.cwd || 'Ungrouped';
       return {
         workspace,
@@ -417,6 +425,9 @@ async function listSessionsApi(limit = 50) {
         turns: st.turns ?? null,
         kTokIn: Math.round(((tk.uncachedInputTokens || 0) + (tk.cacheReadTokens || 0)) / 1000 * 10) / 10,
         kTokOut: Math.round((tk.outputTokens || 0) / 1000 * 10) / 10,
+        ctxUsed,
+        ctxWindow,
+        ctxPct: (ctxUsed != null && ctxWindow) ? Math.round(ctxUsed / ctxWindow * 100) : null,
         ttftS: st.ttftSteps ? Math.round(st.ttftMs / st.ttftSteps / 1000 * 10) / 10 : null,
         decodeTps: st.decodeMs ? Math.round(st.decodeTokens / (st.decodeMs / 1000) * 10) / 10 : null,
       };
@@ -779,6 +790,15 @@ async function status() {
     },
     sessions: (sc.sessions || []).slice(0, 8),
     sessionsSource: sc.source,
+    // Worst live context fill across active sessions — feeds the HARNESS
+    // light so a session approaching the output-token wall is visible from
+    // the strip, not only from the Sessions tab.
+    contextPressure: (() => {
+      const withCtx = (sc.sessions || []).filter(x => x.ctxPct != null);
+      if (!withCtx.length) return null;
+      const worst = withCtx.reduce((a, b) => (b.ctxPct > a.ctxPct ? b : a));
+      return { worstPct: worst.ctxPct, worstTitle: worst.title || worst.id, worstId: worst.id };
+    })(),
     today,
     presets: dshUp ? slow.presets : null,
     plugins: dshUp ? slow.pluginSummary : null,
@@ -1119,6 +1139,8 @@ function computeLights(s){
     lights.HARNESS={level:'a',cause:(s.plugins.stuckList||[]).join('; ')};
   } else if(s.presets&&s.presets.some(function(p){return p.broken})) {
     lights.HARNESS={level:'a',cause:'a preset is broken'};
+  } else if(s.contextPressure&&s.contextPressure.worstPct>=85) {
+    lights.HARNESS={level:'a',cause:'session "'+s.contextPressure.worstTitle+'" is '+s.contextPressure.worstPct+'% through its context window — large single emissions will truncate; start a fresh session for big generations'};
   } else lights.HARNESS={level:'g',cause:null};
   // MODELS
   var unknownResident=(s.fleet&&s.fleet.unknownOriginResident)||[];
@@ -1307,6 +1329,16 @@ async function loadModels(){
 
 // ── sessions tab ──
 var openSession=null;
+// Context fill is the wall's early-warning light: the reply budget is always
+// min(maxTokens, window - this). Amber from 70%, red at 85% - past there a
+// large single emission cannot fit no matter what maxTokens says.
+function ctxCell(s){
+  if(s.ctxPct==null) return '<span class="mut">&mdash;</span>';
+  var cls=s.ctxPct>=85?'badge-red':(s.ctxPct>=70?'badge-amber':'badge-mut');
+  var title=s.ctxUsed.toLocaleString()+' / '+s.ctxWindow.toLocaleString()+' tokens used'+
+    (s.ctxPct>=70?' \\u2014 large single emissions may not fit; start a fresh session for big generations':'');
+  return '<span class="badge '+cls+'" title="'+title+'">'+s.ctxPct+'%</span>';
+}
 async function loadSessions(){
   try{
     var showBug=document.getElementById('showDriveRoot').checked;
@@ -1323,18 +1355,20 @@ async function loadSessions(){
         '<td>'+(s.turns!=null?s.turns:'&mdash;')+'</td>'+
         '<td>'+(s.kTokIn!=null?s.kTokIn+'K':'&mdash;')+'</td>'+
         '<td>'+(s.kTokOut!=null?s.kTokOut+'K':'&mdash;')+'</td>'+
+        '<td>'+ctxCell(s)+'</td>'+
         '<td>'+(s.ttftS!=null?s.ttftS+'s':'&mdash;')+'</td>'+
         '<td>'+(s.decodeTps!=null?s.decodeTps:'&mdash;')+'</td>'+
         '<td>'+fmtRel(s.mtime)+'</td>'+
         '</tr>';
-      var detail='<tr id="sdetail-'+i+'" style="display:none"><td colspan="10"><div class="detail">'+
+      var detail='<tr id="sdetail-'+i+'" style="display:none"><td colspan="11"><div class="detail">'+
         '<div>sessionId: <span class="mono">'+esc(s.sessionId)+'</span></div>'+
+        (s.ctxPct!=null?'<div>context: '+s.ctxUsed.toLocaleString()+' / '+s.ctxWindow.toLocaleString()+' tokens ('+s.ctxPct+'% full, '+(s.ctxWindow-s.ctxUsed).toLocaleString()+' left)</div>':'')+
         (s.goal?'<div>goal: '+esc(s.goal)+'</div>':'')+
         '<div><a href="http://127.0.0.1:3080" target="_blank">Open in cockpit</a></div>'+
         '</div></td></tr>';
       return main+detail;
     }).join('');
-    document.getElementById('sessions-table').innerHTML='<table class="tbl"><thead><tr><th>Title</th><th>Workspace</th><th>Preset</th><th>State</th><th>Turns</th><th>kTok in</th><th>kTok out</th><th>TTFT</th><th>Decode t/s</th><th>Updated</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    document.getElementById('sessions-table').innerHTML='<table class="tbl"><thead><tr><th>Title</th><th>Workspace</th><th>Preset</th><th>State</th><th>Turns</th><th>kTok in</th><th>kTok out</th><th>Context</th><th>TTFT</th><th>Decode t/s</th><th>Updated</th></tr></thead><tbody>'+rows+'</tbody></table>';
   }catch(e){ document.getElementById('sessions-table').innerHTML='<div class="mut">sessions fetch failed</div>' }
 }
 function toggleSessionDetail(i){
