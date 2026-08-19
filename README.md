@@ -49,11 +49,37 @@ auth files are deliberately excluded from sync.
 - The memory graph (`~\.dsh\memory\memory.json`) is the one thing the harness cannot
   revert on its own; the scheduled task **HALO Memory Snapshot** takes hourly
   change-detected snapshots (last 60 kept) as compensation.
-- Full machine rebuild: install Node 22+, pnpm 11, LM Studio + the two GGUFs
-  (`unsloth/Qwen3.8-27B-UD-Q5_K_XL`, `unsloth/Qwen3-Coder-30B-A3B-Instruct-Q4_K_S`),
-  run `scripts\Deploy-ToLive.ps1`, create desktop shortcuts to the two launchers,
-  install the per-profile subagent plugins (command printed by the deploy script),
-  double-click **DeepSeek Harness**. Ten minutes to a working cockpit.
+- **Full machine rebuild — the canonical checklist.** This list is the whole
+  spec: every step, in order, nothing sourced from anywhere else. The deploy
+  script's final **audit stage** checks the resulting machine state row by row
+  and prints PASS/MISSING — the [USER-MANUAL's system-state table](docs/USER-MANUAL.md)
+  is the human-readable reference for the same rows.
+  1. Install **Node 22+**, **pnpm 11**, and **LM Studio**.
+  2. In LM Studio, download the two models:
+     `unsloth/Qwen3.8-27B-UD-Q5_K_XL` and
+     `unsloth/Qwen3-Coder-30B-A3B-Instruct-Q4_K_S` (verify file hashes against
+     the HF API before first use — a resumed download can be size-exact but
+     corrupt).
+  3. Set LM Studio to start its server at login (app settings → run as a
+     login service; headless equivalent: a Startup-folder shortcut running
+     `lms server start`).
+  4. Bootstrap the harness once **before** the first deploy (creates
+     `~\.dsh\profiles`, which the deploy's YAML validator needs — the deploy
+     also self-bootstraps if you forget, but this makes it explicit):
+     `npx @deepseek-ai/dsh@0.1.0-rc.7 web --dump-config`
+  5. Clone this repo and run `scripts\Deploy-ToLive.ps1`. It deploys all
+     files, registers the **HALO Memory Snapshot** hourly task itself, and
+     ends with the state audit.
+  6. Install the per-profile subagent plugins (exact command printed at the
+     end of every deploy).
+  7. Create desktop shortcuts **DeepSeek Harness** → `~\.dsh\Start-DSH.ps1`
+     and **Mission Control** → `~\.dsh\Start-MissionControl.ps1`.
+  8. Run `scripts\Deploy-ToLive.ps1` once more and confirm the audit prints
+     **all PASS**. Then double-click **DeepSeek Harness**.
+
+  Porting to non-HALO hardware? Read
+  [docs/ports/tester-5070ti-bench-2026-08-18.md](docs/ports/tester-5070ti-bench-2026-08-18.md)
+  first — engine tuning and model identity must be adapted per machine.
 
 ## Telemetry & privacy
 
