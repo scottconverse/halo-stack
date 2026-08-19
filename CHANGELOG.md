@@ -3,6 +3,36 @@
 All notable changes to this repository are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **Per-machine profiles** (`machines/`, issue #6): master's files stay
+  HALO-canonical literals; a non-HALO box deploys with `MACHINE=<name>` and
+  the deploy renders `machines/<name>.yml` replacements over the base files
+  (fail-loud when a replacement no longer matches master). `machines/5070ti.yml`
+  captures the port's measured config; the box remembers its name via
+  `~\.dsh\machine`. Portable fixes now land once and every machine inherits.
+- **Self-enforcing install** (PR #8, closes #4): Deploy-ToLive registers the
+  hourly memory-snapshot task itself (idempotent, self-heals deletion) and
+  ends with a machine-state audit — every USER-MANUAL system-state row
+  printed PASS/MISSING against the live machine. js-yaml resolution globbed
+  + self-bootstrapping on clean machines. README carries the one canonical
+  8-step rebuild checklist.
+- **Launcher hardened** (PR #1, from the port session): waits for LM Studio's
+  API, runs the brain check on every launch (evicted brain reloads even with
+  the cockpit already up), logs to `~\.dsh\launcher.log` with retry + Notepad
+  on failure, federation-safe brain check (`deviceIdentifier` null). Smoke-
+  verified on HALO both ways before merge.
+- **Eviction JIT-reload alarm** (PR #9, closes #5): Mission Control alarms
+  MODELS amber when the loaded local brain's quant/context diverge from the
+  deployed loader profile; 16GB-class advisory added to the manual.
+
+### Fixed
+- Mission Control on foreign hardware (issues #2, #3): GPU carveout read
+  from the driver registry instead of a hardcoded 128 GiB; remote fleet
+  models lose Load/Unload controls and the unload endpoint refuses them
+  server-side; quick-action labels derive from the deployed loader scripts.
+
 Prior history — every design iteration, bench run, and decision that led
 here — is preserved in full in [`docs/phases/`](docs/phases/) (Phase 1
 install/wire, Phase 2 baseline/bench, Phase 3 reach, Phase 4 harden,
