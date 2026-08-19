@@ -1002,7 +1002,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 <button onclick="validateConfig()">Validate config</button>
 <div id="sys-validate"></div></div>
 </div>
-<div class="card tabsection" style="margin-top:14px"><h2>Memory graph <button style="float:right" onclick="loadMemoryGraph()">Refresh</button></h2><div id="sys-memgraph"></div></div>
+<div class="card tabsection" style="margin-top:14px"><h2>Memory entities (list view) <button style="float:right" onclick="loadMemoryGraph()">Refresh</button></h2><div class="mut" style="margin-bottom:6px">Text browser of the same data. The interactive graph is the <a href="#memory" onclick="showTab('memory')">Memory tab</a>.</div><div id="sys-memgraph"></div></div>
 <div class="card tabsection"><h2>Log tail <button style="float:right" onclick="loadLogtail()">Refresh</button></h2><div id="sys-logtail" class="mono"></div></div>
 </div>
 
