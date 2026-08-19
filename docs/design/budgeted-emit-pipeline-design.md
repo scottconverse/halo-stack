@@ -6,7 +6,7 @@
 
 **Isolation.** `worktree` — declared, and **not created by the generated code**. Set it up in your intake step, or run the workflow somewhere already isolated.
 
-**Shape.** 12 nodes — 8 code, 3 agent, 1 human; 17 edges, 5 of them loops.
+**Shape.** 14 nodes — 10 code, 3 agent, 1 human; 21 edges, 7 of them loops.
 
 ## Diagram
 
@@ -21,7 +21,9 @@ flowchart TD
     refresh_context["Retry ALWAYS lands in fresh context<br/>max 3 attempts"]
     route_next["More chunks?"]
     integrate["Assemble + full verification<br/>proves: integrate-report.txt"]
-    review("Frontier review of the diff<br/>sonnet<br/>max 2 attempts<br/>proves: review.json")
+    review("Clean-room review of the diff<br/>qwen/qwen3.8-27b<br/>max 2 attempts<br/>proves: review.json")
+    review_gate["Validate the review itself<br/>proves: review-gate.txt"]
+    verdict_route["Findings?"]
     open_pr["Push branch, open PR<br/>max 2 attempts"]
     accept{{"Operator merges"}}
 
@@ -37,16 +39,20 @@ flowchart TD
     refresh_context -. "room.json" .-> emit_chunk
     route_next -- "pass: worktree" --> integrate
     route_next -. "fail: next-chunk.json" .-> emit_chunk
-    integrate -- "pass: worktree" --> review
+    integrate -- "pass: review-input.md" --> review
     integrate -. "fail: integrate-report.txt" .-> emit_chunk
-    review -- "pass: review.json" --> open_pr
-    review -. "fail: review.json" .-> emit_chunk
+    review -- "pass: review.json" --> review_gate
+    review -. "fail: review-shortfall.txt" .-> review
+    review_gate -- "pass: review.json" --> verdict_route
+    review_gate -. "fail: review-gate.txt" .-> review
+    verdict_route -- "pass: review.json" --> open_pr
+    verdict_route -. "fail: rework.json" .-> emit_chunk
     open_pr -- "pr_url" --> accept
 
     classDef code fill:#dbeafe,stroke:#1d4ed8,stroke-width:1px,color:#0b2a6b;
     classDef agent fill:#ede9fe,stroke:#6d28d9,stroke-width:1px,color:#3b0764;
     classDef human fill:#fef3c7,stroke:#b45309,stroke-width:1px,color:#4a2606;
-    class measure_room,fresh_session_start,plan_check,emit_check,refresh_context,route_next,integrate,open_pr code;
+    class measure_room,fresh_session_start,plan_check,emit_check,refresh_context,route_next,integrate,review_gate,verdict_route,open_pr code;
     class plan_chunks,emit_chunk,review agent;
     class accept human;
 ```
@@ -63,8 +69,10 @@ flowchart TD
 | `emit_check` | Code | Two checks, both deterministic: (1) read the session's last turn/end reason from the apiproxy event tail - reason kind 'max-tokens' is a HARD FAIL even if the file looks plausible, because the harness silently DROPS truncated tool-call blocks (dsh-llm BlockAssembler: max-token truncation discards tool calls); (2) node --check / linter on touched files. Write emit-check.txt. | — | — | `emit-check.txt` |
 | `refresh_context` | Code | Park the current session, start a fresh headless session, re-measure room, shrink remaining chunk caps if room changed. Encodes the traced harness behavior: 'continue' after truncation is a brand-new generation against a fuller window, and a truncated tool call is unrecoverable - so never retry a failed emit in the same session. | — | 3, then human | — |
 | `route_next` | Code | Router: exit 0 (pass) when emit-state.json shows every chunk emitted and checked; exit 1 (fail) with next-chunk.json otherwise. A code decision - no model call to decide what a file already says. | — | — | — |
-| `integrate` | Code | Run the project's full check suite over the assembled artifact (syntax, tests, compose-validation where config is involved); git commit on the run branch. Write integrate-report.txt. | — | — | `integrate-report.txt` |
-| `review` | Agent | Adversarial review of the full diff against task-brief.md: correctness, completeness vs the brief, seams between chunks (the failure mode chunked generation adds). Findings to review.json; empty findings = pass. Local models do the bulk; frontier reviews - per the stack's local-first mandate. | sonnet | 2, then human | `review.json` |
+| `integrate` | Code | Run the project's full check suite over the assembled artifact (syntax, tests, compose-validation where config is involved); git commit on the run branch. Write integrate-report.txt and review-input.md (the assembled artifact/diff inlined for the stateless reviewer). | — | — | `integrate-report.txt` |
+| `review` | Agent | Adversarial review by the LOCAL brain in a fresh clean-room call: the reviewer receives ONLY task-brief.md plus review-input.md (the assembled artifact) - zero generation history, so it did not write what it judges. Targets: correctness, completeness vs the brief, and seams between chunks (the failure mode chunked generation adds). Findings to review.json; empty findings = clean. Cost-direction rule: an autonomous local pipeline never calls a paid frontier model for a role the local model can fill. | qwen/qwen3.8-27b | 2, then human | `review.json` |
+| `review_gate` | Code | Schema-check review.json: verdict field present, every finding references a real file/line in the worktree. Deterministic guard against malformed reviewer output. | — | — | `review-gate.txt` |
+| `verdict_route` | Code | Router: exit 0 (pass) when review.json has zero findings; exit 1 (fail) otherwise, forwarding the findings as the rework payload. | — | — | — |
 | `open_pr` | Code | git push, gh pr create with emit-plan.json + review.json summarized in the body. Repo doctrine: branch + PR into master, never direct. | — | 2, then human | — |
 | `accept` | Human | Scott decides whether the artifact is wanted. Merge and any tag are the irreversible, outward-facing steps - the only interior human gate this pipeline has. | — | — | — |
 
@@ -86,10 +94,14 @@ Nodes with an artifact named above cannot pass their claim of success downstream
 | `refresh_context` | always (loop) | `room.json` | `emit_chunk` |
 | `route_next` | pass | `worktree` | `integrate` |
 | `route_next` | fail (loop) | `next-chunk.json` | `emit_chunk` |
-| `integrate` | pass | `worktree` | `review` |
+| `integrate` | pass | `review-input.md` | `review` |
 | `integrate` | fail (loop) | `integrate-report.txt` | `emit_chunk` |
-| `review` | pass | `review.json` | `open_pr` |
-| `review` | fail (loop) | `review.json` | `emit_chunk` |
+| `review` | pass | `review.json` | `review_gate` |
+| `review` | fail (loop) | `review-shortfall.txt` | `review` |
+| `review_gate` | pass | `review.json` | `verdict_route` |
+| `review_gate` | fail (loop) | `review-gate.txt` | `review` |
+| `verdict_route` | pass | `review.json` | `open_pr` |
+| `verdict_route` | fail (loop) | `rework.json` | `emit_chunk` |
 | `open_pr` | always | `pr_url` | `accept` |
 
 ## Where people are involved
@@ -104,7 +116,7 @@ Human touchpoints belong at intake and acceptance, plus any step whose next acti
 |---|---|---|---|---|
 | `plan_chunks` | openai-compat | qwen/qwen3.8-27b | all | this machine (`127.0.0.1`) |
 | `emit_chunk` | openai-compat | qwen/qwen3.8-27b | all | this machine (`127.0.0.1`) |
-| `review` | claude | sonnet | `Read`, `Grep`, `Glob` | Anthropic |
+| `review` | openai-compat | qwen/qwen3.8-27b | all | this machine (`127.0.0.1`) |
 
 Scouting and planning decide what everything downstream does, so errors there propagate and get faithfully implemented — those are the nodes worth the strongest model. Mechanical transforms are where a cheaper tier pays off. Narrowing tools on read-only nodes is both a cost control and a safety property.
 
