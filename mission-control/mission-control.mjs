@@ -793,6 +793,20 @@ async function status() {
     },
     memory: { entities: mem.entities.length, tripwire: MEMORY_ENTITY_TRIPWIRE, ...due },
     loaders: { brain: loaderQuants().brain, worker: loaderQuants().worker },
+    // Eviction JIT-reload trap (5070Ti port, issue #5): when LM Studio evicts
+    // the brain, the next API call reloads it with SERVER defaults, not the
+    // loader profile (measured 17.5 vs 49 tok/s on the port box). Compare the
+    // live local brain against the loader script's own identity/quant/ctx.
+    brainConfigMismatch: (() => {
+      const lq = loaderQuants();
+      if (!lq.brainId) return null;
+      const b = modelsWithOrigin.find(m => m.identifier === lq.brainId && m.originKind === 'local');
+      if (!b) return null;
+      const quantOk = !lq.brain || !b.quant || b.quant === '?' || lq.brain.endsWith(b.quant) || b.quant.endsWith(lq.brain);
+      const ctxOk = !lq.brainCtx || b.context === lq.brainCtx;
+      if (quantOk && ctxOk) return null;
+      return `brain is loaded as ${b.quant}@${b.context} but the loader profile says ${lq.brain}@${lq.brainCtx} - eviction JIT-reload suspected; re-run the brain loader`;
+    })(),
     // RAM/GPU pools in GiB (binary) — matches AMD Adrenalin's VGM split units.
     // Disk stays decimal GB below — drives are marketed in decimal.
     ram: { totalGiB: gib(winTotal), freeGiB: gib(winFree), usedGiB: gib(winTotal - winFree) },
@@ -809,19 +823,24 @@ async function status() {
 // Button labels come from the loader scripts' actual GGUF paths, not
 // hardcoded strings — after a port adapts a loader (e.g. Q5 -> Q3 on a
 // 16 GB box) a "Load Brain (Q5)" label would lie (issue #3).
-const loaderQuantCache = { at: 0, brain: null, worker: null };
-function loaderQuant(file) {
+const loaderQuantCache = { at: 0, brain: null, worker: null, brainCtx: null, brainId: null };
+function loaderProfile(file) {
   try {
-    const m = fs.readFileSync(file, 'utf8').match(/([A-Za-z0-9_.]*(?:IQ|Q)\d[A-Za-z0-9_]*)\.gguf/);
-    if (!m) return null;
-    const q = m[1].match(/(UD-)?(IQ|Q)\d[A-Za-z0-9_]*$/);
-    return q ? q[0] : null;
-  } catch { return null; }
+    const src = fs.readFileSync(file, 'utf8');
+    const g = src.match(/([A-Za-z0-9_.]*(?:IQ|Q)\d[A-Za-z0-9_]*)\.gguf/);
+    const q = g ? g[1].match(/(UD-)?(IQ|Q)\d[A-Za-z0-9_]*$/) : null;
+    const ctx = src.match(/contextLength:\s*(\d+)/);
+    const id = src.match(/identifier:\s*["']([^"']+)["']/);
+    return { quant: q ? q[0] : null, ctx: ctx ? parseInt(ctx[1], 10) : null, id: id ? id[1] : null };
+  } catch { return { quant: null, ctx: null, id: null }; }
 }
 function loaderQuants() {
   if (Date.now() - loaderQuantCache.at < 60000 && loaderQuantCache.at) return loaderQuantCache;
-  loaderQuantCache.brain = loaderQuant(LOADER_Q5);
-  loaderQuantCache.worker = loaderQuant(LOADER_WORKER);
+  const b = loaderProfile(LOADER_Q5);
+  loaderQuantCache.brain = b.quant;
+  loaderQuantCache.brainCtx = b.ctx;
+  loaderQuantCache.brainId = b.id;
+  loaderQuantCache.worker = loaderProfile(LOADER_WORKER).quant;
   loaderQuantCache.at = Date.now();
   return loaderQuantCache;
 }
@@ -1108,6 +1127,7 @@ function computeLights(s){
   if(!s.services.lmsCli) lights.MODELS={level:'r',cause:'lms CLI failed'};
   else if(s.models.length===0) lights.MODELS={level:'a',cause:'zero models loaded'};
   else if(s.models.some(function(m){return m.context>=200000})) lights.MODELS={level:'a',cause:'a loaded model has context \u2265 200K (silent-huge-context trap)'};
+  else if(s.brainConfigMismatch) lights.MODELS={level:'a',cause:s.brainConfigMismatch};
   else if(unknownGenerating.length&&localGenerating) lights.MODELS={level:'a',cause:'fleet contention: unknown-origin model generating alongside a local model \u2014 '+unknownGenerating.join(', ')};
   else lights.MODELS={level:'g',cause:null};
   // Informational-only: an unknown-origin model just being resident (loaded
