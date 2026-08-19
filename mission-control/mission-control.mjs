@@ -1350,6 +1350,20 @@ async function loadVitals(){
     renderVitals();
   }catch(e){ document.getElementById('ov-vitals').innerHTML='<div class="mut">history unavailable</div>'; }
 }
+// Round tick steps (1/2/5 x 10^n) with padding, so axes read as designed
+// rather than as max-divided-by-four artifacts. zeroFloor keeps series that
+// cannot go negative (shared pool, decode rate) anchored at 0.
+function niceScale(lo,hi,zeroFloor){
+  if(!isFinite(lo)||!isFinite(hi)) { lo=0; hi=1; }
+  if(hi-lo<1e-9){ hi=lo+Math.max(Math.abs(lo)*0.05,1); }
+  var pad=(hi-lo)*0.18; lo-=pad; hi+=pad;
+  if(zeroFloor&&lo<0) lo=0;
+  var raw=(hi-lo)/3;
+  var mag=Math.pow(10,Math.floor(Math.log(raw)/Math.LN10));
+  var norm=raw/mag;
+  var step=(norm<1.5?1:norm<3.5?2:norm<7.5?5:10)*mag;
+  return { lo:Math.floor(lo/step)*step, hi:Math.ceil(hi/step)*step, step:step };
+}
 function fmtClock(ms,span){
   var d=new Date(ms);
   var hh=('0'+d.getHours()).slice(-2), mm=('0'+d.getMinutes()).slice(-2);
@@ -1360,60 +1374,72 @@ function renderVitals(){
   var el=document.getElementById('ov-vitals'), rows=vitalsRows;
   renderVitalsHead();
   if(rows.length<2){ el.innerHTML='<div class="mut">not enough history in this range &mdash; vitals sample every 60 s</div>'; return; }
-  var W=1000,H=252,L=54,R=950,T=14,B=206;
+  // Three separate strips, each auto-fitted to its OWN data range, sharing one
+  // time axis. The first version zero-based everything on one scale: GPU
+  // dedicated at 27 of a 35 ceiling drew a featureless slab, the 1.5 GiB
+  // shared trace lived in the bottom 4% where a multi-GiB leak is sub-pixel,
+  // and the second axis put decode at the same pixel height as the memory
+  // edge. This panel's job is VARIATION, not level - never zero-base a leak
+  // watch.
+  var W=1000,H=250,L=56,R=950;
+  var strips=[
+    {key:'gpuDed', label:'GPU dedicated', unit:'GiB', color:'#4fd8c4', top:14,  bot:76,  fill:true},
+    {key:'gpuShared', label:'GPU shared', unit:'GiB', color:'#ffc86b', top:90,  bot:140, fill:true, danger:8},
+    {key:'decodeTps', label:'decode', unit:'t/s', color:'#6ea8ff', top:154, bot:206, fill:false}
+  ];
   var t0=rows[0].t, t1=rows[rows.length-1].t, span=(t1-t0)||1;
-  var maxMem=0,maxTps=0;
-  rows.forEach(function(r){
-    var tot=(r.gpuDed||0)+(r.gpuShared||0);
-    if(tot>maxMem) maxMem=tot;
-    if(r.decodeTps!=null&&r.decodeTps>maxTps) maxTps=r.decodeTps;
-  });
-  maxMem=Math.max(maxMem*1.15,8); maxTps=Math.max(maxTps*1.25,10);
   var x=function(t){return L+((t-t0)/span)*(R-L)};
-  var yM=function(v){return B-(v/maxMem)*(B-T)};
-  var yT=function(v){return B-(v/maxTps)*(B-T)};
-  var dedPts=[],totPts=[];
-  rows.forEach(function(r){
-    var d=r.gpuDed||0,s=r.gpuShared||0;
-    dedPts.push(x(r.t).toFixed(1)+','+yM(d).toFixed(1));
-    totPts.push(x(r.t).toFixed(1)+','+yM(d+s).toFixed(1));
+  var body='',i;
+  strips.forEach(function(st){
+    var vals=rows.map(function(r){return r[st.key]}).filter(function(v){return v!=null});
+    var lo=vals.length?Math.min.apply(null,vals):0, hi=vals.length?Math.max.apply(null,vals):1;
+    var sc=niceScale(lo,hi,st.key==='gpuShared'||st.key==='decodeTps');
+    var y=function(v){return st.bot-((v-sc.lo)/(sc.hi-sc.lo))*(st.bot-st.top)};
+    st._y=y; st._sc=sc;
+    // gridlines + rounded tick labels (the old auto-scale printed 9/17/26/35,
+    // which reads as broken rather than designed)
+    for(var v=sc.lo; v<=sc.hi+1e-9; v+=sc.step){
+      var gy=y(v);
+      body+='<line x1="'+L+'" y1="'+gy.toFixed(1)+'" x2="'+R+'" y2="'+gy.toFixed(1)+'" stroke="#1b2f47"/>'+
+        '<text x="'+(L-7)+'" y="'+(gy+3.5).toFixed(1)+'" fill="#6d8299" font-size="9.5" text-anchor="end">'+
+        (sc.step<1?v.toFixed(1):v.toFixed(0))+'</text>';
+    }
+    if(st.danger!=null&&sc.hi>=st.danger){
+      body+='<line x1="'+L+'" y1="'+y(st.danger).toFixed(1)+'" x2="'+R+'" y2="'+y(st.danger).toFixed(1)+'" stroke="#ff6b6b" stroke-dasharray="4 4" stroke-opacity=".8"/>';
+    }
+    // Break the trace wherever the series has no sample, rather than drawing
+    // a straight line across time when nothing ran.
+    var segs=[],cur=[];
+    rows.forEach(function(r){
+      if(r[st.key]==null){ if(cur.length) segs.push(cur); cur=[]; return; }
+      cur.push([x(r.t),y(r[st.key])]);
+    });
+    if(cur.length) segs.push(cur);
+    segs.forEach(function(sg){
+      var pts=sg.map(function(p){return p[0].toFixed(1)+','+p[1].toFixed(1)}).join('L');
+      if(st.fill&&sg.length>1){
+        body+='<path d="M'+pts+'L'+sg[sg.length-1][0].toFixed(1)+','+st.bot+'L'+sg[0][0].toFixed(1)+','+st.bot+'Z" fill="'+st.color+'" fill-opacity=".13"/>';
+      }
+      body+=(sg.length>1)
+        ? '<path d="M'+pts+'" fill="none" stroke="'+st.color+'" stroke-width="1.7" stroke-linejoin="round"/>'
+        : '<circle cx="'+sg[0][0].toFixed(1)+'" cy="'+sg[0][1].toFixed(1)+'" r="2" fill="'+st.color+'"/>';
+    });
+    var cv=vals.length?vals[vals.length-1]:null;
+    body+='<text x="'+(L+4)+'" y="'+(st.top+11)+'" fill="'+st.color+'" font-size="10.5">'+st.label+
+      ' <tspan fill="#6d8299">'+st.unit+'</tspan>'+
+      (cv!=null?' <tspan fill="#dcecff">'+cv+'</tspan>':' <tspan fill="#6d8299">no samples</tspan>')+'</text>';
   });
-  var areaDed='M'+dedPts.join('L')+'L'+R.toFixed(1)+','+B+'L'+L.toFixed(1)+','+B+'Z';
-  var areaShared='M'+totPts.join('L')+'L'+dedPts.slice().reverse().join('L')+'Z';
-  // Decode is sampled only when a session has run; break the line on gaps
-  // rather than drawing a straight lie across idle time.
-  var segs=[],cur=[];
-  rows.forEach(function(r){
-    if(r.decodeTps==null){ if(cur.length>1) segs.push(cur); cur=[]; return; }
-    cur.push(x(r.t).toFixed(1)+','+yT(r.decodeTps).toFixed(1));
-  });
-  if(cur.length>1) segs.push(cur);
-  var tpsPath=segs.map(function(s){return 'M'+s.join('L')}).join(' ');
-  var grid='',i;
-  for(i=0;i<=4;i++){
-    var gy=T+(B-T)*i/4, memV=maxMem*(1-i/4), tpsV=maxTps*(1-i/4);
-    grid+='<line x1="'+L+'" y1="'+gy.toFixed(1)+'" x2="'+R+'" y2="'+gy.toFixed(1)+'" stroke="#1b2f47"/>'+
-      '<text x="'+(L-7)+'" y="'+(gy+3.5).toFixed(1)+'" fill="#7f95ab" font-size="10" text-anchor="end">'+memV.toFixed(0)+'</text>'+
-      '<text x="'+(R+7)+'" y="'+(gy+3.5).toFixed(1)+'" fill="#6ea8ff" font-size="10">'+tpsV.toFixed(0)+'</text>';
-  }
   var xlab='';
   for(i=0;i<=4;i++){
     var tt=t0+span*i/4;
-    xlab+='<text x="'+x(tt).toFixed(0)+'" y="'+(B+17)+'" fill="#7f95ab" font-size="10" text-anchor="middle">'+fmtClock(tt,span)+'</text>';
+    xlab+='<text x="'+x(tt).toFixed(0)+'" y="'+(H-8)+'" fill="#6d8299" font-size="9.5" text-anchor="middle">'+fmtClock(tt,span)+'</text>';
   }
   el.innerHTML=
     '<div style="position:relative">'+
     '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="display:block" id="vitals-svg">'+
-      grid+xlab+
-      '<path d="'+areaDed+'" fill="#4fd8c4" fill-opacity=".16"/>'+
-      '<polyline points="'+dedPts.join(' ')+'" fill="none" stroke="#4fd8c4" stroke-width="1.6"/>'+
-      '<path d="'+areaShared+'" fill="#ffc86b" fill-opacity=".34"/>'+
-      '<path d="'+tpsPath+'" fill="none" stroke="#6ea8ff" stroke-width="1.8" stroke-linejoin="round"/>'+
-      '<line id="vx" x1="0" y1="'+T+'" x2="0" y2="'+B+'" stroke="#8fb6d6" stroke-dasharray="3 3" style="display:none"/>'+
-      '<rect x="'+L+'" y="'+T+'" width="'+(R-L)+'" height="'+(B-T)+'" fill="transparent" id="vhit"/>'+
-      '<text x="'+L+'" y="'+(H-4)+'" fill="#4fd8c4" font-size="10">GPU dedicated (GiB)</text>'+
-      '<text x="'+(L+150)+'" y="'+(H-4)+'" fill="#ffc86b" font-size="10">GPU shared &mdash; leak signal</text>'+
-      '<text x="'+(L+330)+'" y="'+(H-4)+'" fill="#6ea8ff" font-size="10">decode t/s (right axis)</text>'+
+      body+xlab+
+      '<line id="vx" x1="0" y1="14" x2="0" y2="206" stroke="#8fb6d6" stroke-dasharray="3 3" style="display:none"/>'+
+      '<rect x="'+L+'" y="14" width="'+(R-L)+'" height="192" fill="transparent" id="vhit"/>'+
     '</svg><div class="vtip" id="vtip"></div></div>';
   var svg=document.getElementById('vitals-svg'), hit=document.getElementById('vhit'),
       tip=document.getElementById('vtip'), vx=document.getElementById('vx');
