@@ -113,6 +113,27 @@ function Invoke-DumpConfigGate {
 }
 
 # ---------------------------------------------------------------------------
+Write-Host "== stage: freshness (is this clone current?) =="
+# The deploy ships whatever the LOCAL clone holds -- it never pulls. The
+# 5070Ti box ran three clean deploys of months-stale code because nothing
+# said the clone was behind (the memory-graph tab "missing from the repo"
+# incident, 2026-08-19). Warn loudly; do not block -- pinning an old commit
+# deliberately is allowed, silence is not.
+try {
+    git -C $repo fetch origin master --quiet 2>$null
+    $behind = git -C $repo rev-list --count "HEAD..origin/master" 2>$null
+    $localDirty = git -C $repo status --porcelain 2>$null
+    if ($behind -and [int]$behind -gt 0) {
+        Write-Warning "This clone is $behind commit(s) BEHIND origin/master -- you are about to deploy OLD code. Run 'git pull' first unless pinning deliberately."
+    } else {
+        Write-Host "clone is current with origin/master"
+    }
+    if ($localDirty) { Write-Host "note: clone has uncommitted local changes (fine if intentional)" }
+} catch {
+    Write-Host "freshness check skipped (offline or not a git clone)"
+}
+
+# ---------------------------------------------------------------------------
 # Machine profile (issue #6): master's files are HALO-canonical literals.
 # On HALO, $srcRoot is the repo itself -- byte-for-byte, zero rendering, so
 # the base machine's deploy path is untouched. On any other machine, the
