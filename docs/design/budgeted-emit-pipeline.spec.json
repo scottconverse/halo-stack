@@ -1,0 +1,163 @@
+{
+  "name": "budgeted-emit-pipeline",
+  "goal": "Produce arbitrarily large generated artifacts (plugins, modules, documents) on the HALO stack without ever hitting the output-token wall: every emit is sized to measured context room before it is requested, retries always land in fresh context, and the run never stalls waiting for a human 'continue'",
+  "trigger": "A generative task brief (task-brief.md) lands in the run directory",
+  "isolation": "worktree",
+  "budget": { "agent_calls": 24 },
+  "entry": "measure_room",
+  "nodes": [
+    {
+      "id": "measure_room",
+      "label": "Measure context room via harness API",
+      "kind": "code",
+      "detail": "GET the dsh apiproxy sessions tail for the target session; read projections.contextPressure {contextWindow, projectedTokens}; room = contextWindow - projectedTokens; write room.json. This projection exists today (dsh-token-meter -> dsh-host-apiproxy sessions endpoint) - Mission Control already speaks this API.",
+      "writes": ["room.json"],
+      "evidence": "room.json",
+      "max_attempts": 2,
+      "on_exhausted": "fail"
+    },
+    {
+      "id": "fresh_session_start",
+      "label": "No usable session: start fresh headless",
+      "kind": "code",
+      "detail": "Start a new dsh --profile headless session (cold context = maximum room: ~55K usable of the 65,536 window after the ~10K boot prefix); write room.json from its measured pressure.",
+      "writes": ["room.json"],
+      "max_attempts": 2,
+      "on_exhausted": "fail"
+    },
+    {
+      "id": "plan_chunks",
+      "label": "Split the artifact into room-sized chunks",
+      "kind": "agent",
+      "backend": "openai-compat",
+      "endpoint": "http://127.0.0.1:1234",
+      "model": "qwen/qwen3.8-27b",
+      "detail": "Read task-brief.md and room.json. Produce emit-plan.json: an ordered list of chunks, each targeting one file region, with est_tokens <= cap where cap = min(0.5 * room, 12000). The 0.5 factor reserves output budget for thinking tokens, which spend from the same per-reply budget (measured on this stack). Chunks are written with the harness's incremental file tools (create / insert / str_replace), never as one giant tool-call argument.",
+      "reads": ["task-brief.md", "room.json"],
+      "writes": ["emit-plan.json"],
+      "max_attempts": 2,
+      "on_exhausted": "human"
+    },
+    {
+      "id": "plan_check",
+      "label": "Validate plan deterministically",
+      "kind": "code",
+      "detail": "Schema-check emit-plan.json; assert every chunk est_tokens <= cap, file regions disjoint, order dependency-safe. Exit non-zero with reasons in plan-check.txt.",
+      "reads": ["emit-plan.json", "room.json"],
+      "writes": ["plan-check.txt"],
+      "evidence": "plan-check.txt",
+      "max_attempts": 1,
+      "on_exhausted": "fail"
+    },
+    {
+      "id": "emit_chunk",
+      "label": "Emit ONE chunk via incremental file tools",
+      "kind": "agent",
+      "backend": "openai-compat",
+      "endpoint": "http://127.0.0.1:1234",
+      "model": "qwen/qwen3.8-27b",
+      "detail": "Generate the current chunk only, writing with create/insert/str_replace so no single tool-call argument exceeds the chunk cap. On rework, the incoming report says exactly what failed - fix that, do not regenerate the artifact.",
+      "reads": ["emit-plan.json", "emit-state.json", "worktree"],
+      "writes": ["worktree", "emit-state.json"],
+      "max_attempts": 3,
+      "on_exhausted": "human"
+    },
+    {
+      "id": "emit_check",
+      "label": "Truncation + syntax gate",
+      "kind": "code",
+      "detail": "Two checks, both deterministic: (1) read the session's last turn/end reason from the apiproxy event tail - reason kind 'max-tokens' is a HARD FAIL even if the file looks plausible, because the harness silently DROPS truncated tool-call blocks (dsh-llm BlockAssembler: max-token truncation discards tool calls); (2) node --check / linter on touched files. Write emit-check.txt.",
+      "reads": ["worktree", "emit-state.json"],
+      "writes": ["emit-check.txt"],
+      "evidence": "emit-check.txt",
+      "max_attempts": 1,
+      "on_exhausted": "fail"
+    },
+    {
+      "id": "refresh_context",
+      "label": "Retry ALWAYS lands in fresh context",
+      "kind": "code",
+      "detail": "Park the current session, start a fresh headless session, re-measure room, shrink remaining chunk caps if room changed. Encodes the traced harness behavior: 'continue' after truncation is a brand-new generation against a fuller window, and a truncated tool call is unrecoverable - so never retry a failed emit in the same session.",
+      "writes": ["room.json"],
+      "max_attempts": 3,
+      "on_exhausted": "human"
+    },
+    {
+      "id": "route_next",
+      "label": "More chunks?",
+      "kind": "code",
+      "detail": "Router: exit 0 (pass) when emit-state.json shows every chunk emitted and checked; exit 1 (fail) with next-chunk.json otherwise. A code decision - no model call to decide what a file already says.",
+      "reads": ["emit-state.json"],
+      "writes": ["next-chunk.json"],
+      "max_attempts": 1,
+      "on_exhausted": "fail"
+    },
+    {
+      "id": "integrate",
+      "label": "Assemble + full verification",
+      "kind": "code",
+      "detail": "Run the project's full check suite over the assembled artifact (syntax, tests, compose-validation where config is involved); git commit on the run branch. Write integrate-report.txt.",
+      "reads": ["worktree"],
+      "writes": ["integrate-report.txt", "worktree"],
+      "evidence": "integrate-report.txt",
+      "max_attempts": 1,
+      "on_exhausted": "fail"
+    },
+    {
+      "id": "review",
+      "label": "Frontier review of the diff",
+      "kind": "agent",
+      "backend": "claude",
+      "model": "sonnet",
+      "tools": ["Read", "Grep", "Glob"],
+      "detail": "Adversarial review of the full diff against task-brief.md: correctness, completeness vs the brief, seams between chunks (the failure mode chunked generation adds). Findings to review.json; empty findings = pass. Local models do the bulk; frontier reviews - per the stack's local-first mandate.",
+      "reads": ["worktree", "task-brief.md"],
+      "writes": ["review.json"],
+      "evidence": "review.json",
+      "max_attempts": 2,
+      "on_exhausted": "human"
+    },
+    {
+      "id": "open_pr",
+      "label": "Push branch, open PR",
+      "kind": "code",
+      "detail": "git push, gh pr create with emit-plan.json + review.json summarized in the body. Repo doctrine: branch + PR into master, never direct.",
+      "reads": ["worktree", "review.json"],
+      "writes": ["pr_url"],
+      "max_attempts": 2,
+      "on_exhausted": "human"
+    },
+    {
+      "id": "accept",
+      "label": "Operator merges",
+      "kind": "human",
+      "detail": "Scott decides whether the artifact is wanted. Merge and any tag are the irreversible, outward-facing steps - the only interior human gate this pipeline has.",
+      "reads": ["pr_url"]
+    }
+  ],
+  "edges": [
+    { "from": "measure_room", "to": "plan_chunks", "when": "pass", "payload": "room.json" },
+    { "from": "measure_room", "to": "fresh_session_start", "when": "fail", "payload": "measure-error.txt" },
+    { "from": "fresh_session_start", "to": "plan_chunks", "when": "always", "payload": "room.json" },
+    { "from": "plan_chunks", "to": "plan_check", "when": "always", "payload": "emit-plan.json" },
+    { "from": "plan_check", "to": "emit_chunk", "when": "pass", "payload": "emit-plan.json" },
+    { "from": "plan_check", "to": "plan_chunks", "when": "fail", "payload": "plan-check.txt", "loop": true },
+    { "from": "emit_chunk", "to": "emit_check", "when": "always", "payload": "worktree" },
+    { "from": "emit_check", "to": "route_next", "when": "pass", "payload": "emit-state.json" },
+    { "from": "emit_check", "to": "refresh_context", "when": "fail", "payload": "emit-check.txt" },
+    { "from": "refresh_context", "to": "emit_chunk", "when": "always", "payload": "room.json", "loop": true },
+    { "from": "route_next", "to": "integrate", "when": "pass", "payload": "worktree" },
+    { "from": "route_next", "to": "emit_chunk", "when": "fail", "payload": "next-chunk.json", "loop": true },
+    { "from": "integrate", "to": "review", "when": "pass", "payload": "worktree" },
+    { "from": "integrate", "to": "emit_chunk", "when": "fail", "payload": "integrate-report.txt", "loop": true },
+    { "from": "review", "to": "open_pr", "when": "pass", "payload": "review.json" },
+    { "from": "review", "to": "emit_chunk", "when": "fail", "payload": "review.json", "loop": true },
+    { "from": "open_pr", "to": "accept", "when": "always", "payload": "pr_url" }
+  ],
+  "open_questions": [
+    "Chunk cap constants (0.5 * room, 12K ceiling) are engineering estimates from measured thinking-token overhead - the first two real runs should record actual per-chunk output spend and tune them.",
+    "The truncation detector reads turn/end reasons from the apiproxy sessions event tail; confirmed present in the API surface, but the exact tail-pagination call needs one probe against a live headless session before the check is coded.",
+    "Window expansion (Phase 1 of the fix plan) raises room from ~55K to ~120K usable and roughly doubles the chunk cap; the pipeline needs no structural change when that lands - only room.json values move.",
+    "budget.agent_calls=24 assumes artifacts up to ~15 chunks with modest rework; raise it for book-sized artifacts or the run will hand off mid-work by design."
+  ]
+}

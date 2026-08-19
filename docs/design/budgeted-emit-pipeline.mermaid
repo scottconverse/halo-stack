@@ -1,0 +1,38 @@
+flowchart TD
+    measure_room["Measure context room via harness API<br/>max 2 attempts<br/>proves: room.json"]
+    fresh_session_start["No usable session: start fresh headless<br/>max 2 attempts"]
+    plan_chunks("Split the artifact into room-sized chunks<br/>qwen/qwen3.8-27b<br/>max 2 attempts")
+    plan_check["Validate plan deterministically<br/>proves: plan-check.txt"]
+    emit_chunk("Emit ONE chunk via incremental file tools<br/>qwen/qwen3.8-27b<br/>max 3 attempts")
+    emit_check["Truncation + syntax gate<br/>proves: emit-check.txt"]
+    refresh_context["Retry ALWAYS lands in fresh context<br/>max 3 attempts"]
+    route_next["More chunks?"]
+    integrate["Assemble + full verification<br/>proves: integrate-report.txt"]
+    review("Frontier review of the diff<br/>sonnet<br/>max 2 attempts<br/>proves: review.json")
+    open_pr["Push branch, open PR<br/>max 2 attempts"]
+    accept{{"Operator merges"}}
+
+    measure_room -- "pass: room.json" --> plan_chunks
+    measure_room -- "fail: measure-error.txt" --> fresh_session_start
+    fresh_session_start -- "room.json" --> plan_chunks
+    plan_chunks -- "emit-plan.json" --> plan_check
+    plan_check -- "pass: emit-plan.json" --> emit_chunk
+    plan_check -. "fail: plan-check.txt" .-> plan_chunks
+    emit_chunk -- "worktree" --> emit_check
+    emit_check -- "pass: emit-state.json" --> route_next
+    emit_check -- "fail: emit-check.txt" --> refresh_context
+    refresh_context -. "room.json" .-> emit_chunk
+    route_next -- "pass: worktree" --> integrate
+    route_next -. "fail: next-chunk.json" .-> emit_chunk
+    integrate -- "pass: worktree" --> review
+    integrate -. "fail: integrate-report.txt" .-> emit_chunk
+    review -- "pass: review.json" --> open_pr
+    review -. "fail: review.json" .-> emit_chunk
+    open_pr -- "pr_url" --> accept
+
+    classDef code fill:#dbeafe,stroke:#1d4ed8,stroke-width:1px,color:#0b2a6b;
+    classDef agent fill:#ede9fe,stroke:#6d28d9,stroke-width:1px,color:#3b0764;
+    classDef human fill:#fef3c7,stroke:#b45309,stroke-width:1px,color:#4a2606;
+    class measure_room,fresh_session_start,plan_check,emit_check,refresh_context,route_next,integrate,open_pr code;
+    class plan_chunks,emit_chunk,review agent;
+    class accept human;
