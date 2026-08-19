@@ -3,7 +3,7 @@
 All notable changes to this repository are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.3.0] - 2026-08-19
 
 ### Added
 - **Window doubled: brain now runs ctx 131072 with KV q8_0**
