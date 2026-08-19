@@ -69,7 +69,11 @@ auth files are deliberately excluded from sync.
      `npx @deepseek-ai/dsh@0.1.0-rc.7 web --dump-config`
   5. Clone this repo and run `scripts\Deploy-ToLive.ps1`. It deploys all
      files, registers the **HALO Memory Snapshot** hourly task itself, and
-     ends with the state audit.
+     ends with the state audit. **On a non-HALO machine**, set
+     `MACHINE=<name>` for the first deploy (e.g. `$env:MACHINE='5070ti'`) —
+     the deploy renders that machine's profile from `machines\<name>.yml`
+     over the base files and the box remembers its name afterward
+     (see [machines/README.md](machines/README.md)).
   6. Install the per-profile subagent plugins (exact command printed at the
      end of every deploy).
   7. Create desktop shortcuts **DeepSeek Harness** → `~\.dsh\Start-DSH.ps1`

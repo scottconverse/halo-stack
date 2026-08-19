@@ -34,6 +34,26 @@ $map = @(
     @{ src = "opencode\opencode.json";           dst = "$U\.config\opencode\opencode.json" }
 )
 
+# Borrow js-yaml from the dsh profile install or any npx cache entry (globbed,
+# never a hardcoded machine-specific hash -- issue #4). On a genuinely clean
+# machine neither exists yet: bootstrap by running dsh once (--dump-config
+# creates ~\.dsh\profiles including js-yaml), then re-resolve.
+function Resolve-JsYamlOrBootstrap {
+    $resolve = {
+        $candidates = @("$U\.dsh\profiles\node_modules\js-yaml")
+        $candidates += Get-ChildItem "$U\AppData\Local\npm-cache\_npx\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+        $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
+    $found = & $resolve
+    if (-not $found) {
+        Write-Host "no js-yaml found - clean machine? bootstrapping the dsh profile (one-time npx run)..."
+        $env:DSH_PERMISSION_MODE = 'danger-full-access'
+        npx $dshPkg web --dump-config 2>&1 | Out-Null
+        $found = & $resolve
+    }
+    return $found
+}
+
 function Test-YamlSyntax {
     # Borrow js-yaml from wherever the harness already installed it, and parse
     # with a permissive schema that tolerates cordis.patch.yml's custom !!js
@@ -69,7 +89,7 @@ function New-StagingHome {
     foreach ($m in $Map) {
         if ($m.dst -notlike "$U\.dsh\*") { continue }
         if ($m.skipIfExists -and (Test-Path $m.dst)) { continue }
-        $source = Join-Path $repo $m.src
+        $source = Join-Path $srcRoot $m.src
         if (-not (Test-Path $source)) { continue }
         $rel = $m.dst.Substring("$U\.dsh\".Length)
         $target = Join-Path $StagingRoot $rel
@@ -93,7 +113,60 @@ function Invoke-DumpConfigGate {
 }
 
 # ---------------------------------------------------------------------------
-Write-Host "== stage: drift guard (live edits not yet synced?) =="
+# Machine profile (issue #6): master's files are HALO-canonical literals.
+# On HALO, $srcRoot is the repo itself -- byte-for-byte, zero rendering, so
+# the base machine's deploy path is untouched. On any other machine, the
+# repo files named in machines\<name>.yml get literal string replacements
+# applied to a rendered copy, and THAT becomes the deploy source for every
+# later stage (drift guard, validation, backup, apply). Machine resolution:
+# $env:MACHINE > ~\.dsh\machine marker > 'halo'. Every deploy writes the
+# marker back, so a box remembers what it is after its first named deploy.
+$machine = if ($env:MACHINE) { $env:MACHINE }
+           elseif (Test-Path "$U\.dsh\machine") { (Get-Content "$U\.dsh\machine" -Raw).Trim() }
+           else { 'halo' }
+$profilePath = Join-Path $repo "machines\$machine.yml"
+if (-not (Test-Path $profilePath)) {
+    Write-Error "No machine profile at machines\$machine.yml (machine resolved as '$machine'). Nothing live touched."
+    exit 1
+}
+$srcRoot = $repo
+$renderRoot = $null
+if ($machine -ne 'halo') {
+    Write-Host "== stage: render (machine profile: $machine) =="
+    $jsYamlForProfile = Resolve-JsYamlOrBootstrap
+    if (-not $jsYamlForProfile) { Write-Error "Cannot parse machine profile: no js-yaml available. Nothing live touched."; exit 1 }
+    $ymlToJson = Join-Path $env:TEMP "dsh-deploy-yml2json.js"
+    Set-Content -Path $ymlToJson -Encoding utf8 -Value 'const y=require(process.argv[2]);const fs=require("fs");console.log(JSON.stringify(y.load(fs.readFileSync(process.argv[3],"utf8"))));'
+    $profileJson = & node $ymlToJson $jsYamlForProfile $profilePath 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Error "Machine profile failed to parse: $profileJson"; exit 1 }
+    $machineProfile = $profileJson | ConvertFrom-Json
+    if ($machineProfile.machine -ne $machine) { Write-Error "Profile file says machine '$($machineProfile.machine)' but was selected as '$machine'. Fix the profile."; exit 1 }
+
+    $renderRoot = Join-Path $env:TEMP "dsh-deploy-render-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    foreach ($m in $map) {
+        $source = Join-Path $repo $m.src
+        if (-not (Test-Path $source)) { continue }
+        $target = Join-Path $renderRoot $m.src
+        New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
+        Copy-Item $source $target -Force
+    }
+    foreach ($r in @($machineProfile.replacements)) {
+        $target = Join-Path $renderRoot $r.file
+        if (-not (Test-Path $target)) { Write-Error "Profile replacement targets '$($r.file)' which is not a deployed file. Nothing live touched."; exit 1 }
+        $text = Get-Content $target -Raw
+        if (-not $text.Contains($r.find)) {
+            Write-Error "Profile replacement not found in $($r.file): `"$($r.find)`" -- master moved and the profile rotted. Fix machines\$machine.yml. Nothing live touched."
+            exit 1
+        }
+        Set-Content -Path $target -Value ($text.Replace($r.find, $r.replace)) -NoNewline -Encoding utf8
+    }
+    Write-Host "  rendered $((@($machineProfile.replacements)).Count) replacement(s) for '$machine' into a deploy copy"
+    $srcRoot = $renderRoot
+} else {
+    Write-Host "machine profile: halo (base) - repo files deploy byte-for-byte"
+}
+
+Write-Host "`n== stage: drift guard (live edits not yet synced?) =="
 # A deploy overwrites live files with repo files. If a live file is NEWER than
 # its repo counterpart and differs, someone edited live and never ran
 # Sync-FromLive -- deploying now would silently clobber those edits (this
@@ -101,7 +174,7 @@ Write-Host "== stage: drift guard (live edits not yet synced?) =="
 # live edits; the backup stage saved them). Abort unless $env:DEPLOY_FORCE=1.
 $drifted = @()
 foreach ($m in $map) {
-    $source = Join-Path $repo $m.src
+    $source = Join-Path $srcRoot $m.src
     if (-not (Test-Path $source) -or -not (Test-Path $m.dst)) { continue }
     if ($m.skipIfExists) { continue }
     $srcItem = Get-Item $source; $dstItem = Get-Item $m.dst
@@ -121,22 +194,7 @@ if ($drifted.Count -gt 0) { Write-Warning "DEPLOY_FORCE=1 set - overwriting $($d
 else { Write-Host "no drift - live matches or is older than repo everywhere" }
 
 Write-Host "`n== stage: pre-validate (YAML syntax) =="
-# Borrow js-yaml from the dsh profile install or any npx cache entry (globbed,
-# never a hardcoded machine-specific hash -- issue #4). On a genuinely clean
-# machine neither exists yet: bootstrap by running dsh once (--dump-config
-# creates ~\.dsh\profiles including js-yaml), then re-resolve.
-function Resolve-JsYaml {
-    $candidates = @("$U\.dsh\profiles\node_modules\js-yaml")
-    $candidates += Get-ChildItem "$U\AppData\Local\npm-cache\_npx\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
-    return $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-}
-$jsYamlPath = Resolve-JsYaml
-if (-not $jsYamlPath) {
-    Write-Host "no js-yaml found - clean machine? bootstrapping the dsh profile (one-time npx run)..."
-    $env:DSH_PERMISSION_MODE = 'danger-full-access'
-    npx $dshPkg web --dump-config 2>&1 | Out-Null
-    $jsYamlPath = Resolve-JsYaml
-}
+$jsYamlPath = Resolve-JsYamlOrBootstrap
 if (-not $jsYamlPath) {
     Write-Error "No js-yaml install found even after bootstrapping dsh (checked dsh profile + npx cache glob). Aborting -- nothing live touched."
     exit 1
@@ -159,7 +217,7 @@ try {
 
 $preValidateFailed = $false
 foreach ($m in ($map | Where-Object { $_.src -match '\.ya?ml$' })) {
-    $source = Join-Path $repo $m.src
+    $source = Join-Path $srcRoot $m.src
     if (-not (Test-Path $source)) { continue }
     if ($m.skipIfExists -and (Test-Path $m.dst)) { continue }
     $result = Test-YamlSyntax -Path $source -JsYamlPath $jsYamlPath -ValidatorScript $validatorScript
@@ -212,7 +270,7 @@ Write-Host "backups at $backupRoot"
 
 Write-Host "`n== stage: apply =="
 foreach ($m in $map) {
-    $source = Join-Path $repo $m.src
+    $source = Join-Path $srcRoot $m.src
     if ($m.skipIfExists -and (Test-Path $m.dst)) { Write-Host "kept existing $($m.dst)"; continue }
     if (Test-Path $source) {
         New-Item -ItemType Directory -Force (Split-Path $m.dst) | Out-Null
@@ -222,6 +280,8 @@ foreach ($m in $map) {
         Write-Warning "missing repo file: $($m.src)"
     }
 }
+Set-Content -Path "$U\.dsh\machine" -Value $machine -Encoding ascii
+Write-Host "machine marker written: ~\.dsh\machine = $machine"
 
 Write-Host "`n== stage: validate (live config composes clean) =="
 $live = Invoke-DumpConfigGate
@@ -344,6 +404,8 @@ if ($auditDeployCausedFailure) {
     Write-Error "Audit found a gap this deploy itself caused (see MISSING above). Deploy content applied and validated, but the machine state is incomplete."
     exit 1
 }
+
+if ($renderRoot) { Remove-Item -Recurse -Force $renderRoot -ErrorAction SilentlyContinue }
 
 Write-Host "`nDone. If any row above says MISSING, fix it from the README's install checklist."
 Write-Host "Subagent plugins per profile: npx @deepseek-ai/dsh@0.1.0-rc.7 plugin --profile <web|headless> add @deepseek-ai/dsh-subagent-codex@0.1.0-rc.7 @deepseek-ai/dsh-subagent-claude-code@0.1.0-rc.7 @deepseek-ai/dsh-subagent-acp@0.1.0-rc.7 @deepseek-ai/dsh-sdk-protocol@0.1.0-rc.7"

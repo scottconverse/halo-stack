@@ -1,0 +1,80 @@
+# 5070Ti / "NvideaBlackwell" — RTX 5070 Ti 16GB, CUDA engine.
+# Values are the measured best-value config from the port record
+# (docs/ports/tester-5070ti-bench-2026-08-18.md). STATUS: captures the
+# hand-adaptations made during the port; profile-driven deploy not yet
+# validated on the box itself (its live files were adapted by hand first).
+# Validate with: set MACHINE=5070ti, run scripts\Deploy-ToLive.ps1, confirm
+# the audit and a cockpit smoke run.
+machine: 5070ti
+description: RTX 5070 Ti 16GB discrete VRAM, CUDA 12 engine, LM Link federated with HALO
+facts:
+  identity: qwen/qwen3.8-27b-5070ti
+  workerIdentity: qwen3-coder-30b-a3b-instruct-5070ti
+  brainModel: unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf
+  contextLength: 32768 (server auto-sizes to leftover VRAM; 40448 applied with q8_0 KV)
+  kvCache: q8_0 (the 16GB unlock — 2.4x deep decode vs f16)
+  mtp: off (hurts on CUDA — measured both ways)
+  engine: llama.cpp CUDA 12
+  memoryNote: one model resident at a time; eviction routine — JIT-reload alarm matters here
+  workerNote: cap worker requests <19K ctx (instance crashes above; see issue #5)
+  knownGap: Mission Control quick-action 'unload-worker' hardcodes the HALO worker identity
+replacements:
+  # -- identity: suffix everywhere so LM Link federation cannot cross-resolve --
+  - file: dsh\settings.yaml
+    find: "qwen/qwen3.8-27b"
+    replace: "qwen/qwen3.8-27b-5070ti"
+  - file: dsh\settings.yaml
+    find: "qwen3-coder-30b-a3b-instruct"
+    replace: "qwen3-coder-30b-a3b-instruct-5070ti"
+  - file: dsh\cordis.patch.yml
+    find: "qwen/qwen3.8-27b"
+    replace: "qwen/qwen3.8-27b-5070ti"
+  - file: dsh\Start-DSH.ps1
+    find: "qwen/qwen3.8-27b"
+    replace: "qwen/qwen3.8-27b-5070ti"
+  - file: opencode\opencode.json
+    find: "qwen/qwen3.8-27b"
+    replace: "qwen/qwen3.8-27b-5070ti"
+  - file: opencode\opencode.json
+    find: "qwen3-coder-30b-a3b-instruct"
+    replace: "qwen3-coder-30b-a3b-instruct-5070ti"
+  - file: lmstudio\Load-OpenCode-Qwen.mjs
+    find: "qwen/qwen3.8-27b"
+    replace: "qwen/qwen3.8-27b-5070ti"
+  - file: lmstudio\Load-Worker-Coder.mjs
+    find: "qwen3-coder-30b-a3b-instruct"
+    replace: "qwen3-coder-30b-a3b-instruct-5070ti"
+  # -- brain loader: Q3 weights, 32K ctx, KV q8_0, MTP off --
+  - file: lmstudio\Load-OpenCode-Qwen.mjs
+    find: "Qwen3.8-27B-UD-Q5_K_XL.gguf"
+    replace: "Qwen3.8-27B-UD-Q3_K_XL.gguf"
+  - file: lmstudio\Load-OpenCode-Qwen.mjs
+    find: "contextLength: 65536,"
+    replace: "contextLength: 32768,"
+  # ctx assert: server auto-sizes (32768 -> 32000/40448), so exact-match
+  # becomes a floor check
+  - file: lmstudio\Load-OpenCode-Qwen.mjs
+    find: "contextLength: [config.contextLength, 65536],"
+    replace: "contextLength: [config.contextLength >= 24576, true],"
+  - file: lmstudio\Load-OpenCode-Qwen.mjs
+    find: "speculativeDraftMtp: true,"
+    replace: "speculativeDraftMtp: false,"
+  - file: lmstudio\Load-OpenCode-Qwen.mjs
+    find: "speculativeDraftMtp: [config.speculativeDraftMtp, true],"
+    replace: "speculativeDraftMtp: [config.speculativeDraftMtp, false],"
+  - file: lmstudio\Load-OpenCode-Qwen.mjs
+    find: "useFp16ForKVCache: true,"
+    replace: "useFp16ForKVCache: false,"
+  - file: lmstudio\Load-OpenCode-Qwen.mjs
+    find: "useFp16ForKVCache: [config.useFp16ForKVCache, true],"
+    replace: "useFp16ForKVCache: [config.useFp16ForKVCache, false],"
+  - file: lmstudio\Load-OpenCode-Qwen.mjs
+    find: "llamaKCacheQuantizationType: false,"
+    replace: "llamaKCacheQuantizationType: \"q8_0\","
+  - file: lmstudio\Load-OpenCode-Qwen.mjs
+    find: "llamaVCacheQuantizationType: false,"
+    replace: "llamaVCacheQuantizationType: \"q8_0\","
+  # -- worker loader: ctx assert becomes a floor (auto-sizing) --
+  - file: lmstudio\Load-Worker-Coder.mjs
+    find: "if (config.contextLength !== 32768) {"
+    replace: "if (config.contextLength < 24576) {"

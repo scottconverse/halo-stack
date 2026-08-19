@@ -1,0 +1,14 @@
+# HALO — the base machine. Master's config files ARE this profile:
+# no replacements, the deploy uses repo files byte-for-byte.
+machine: halo
+description: AMD Strix Halo APU, 128 GiB unified memory (64/64 VGM split), llama.cpp Vulkan engine
+facts:
+  identity: qwen/qwen3.8-27b
+  workerIdentity: qwen3-coder-30b-a3b-instruct
+  brainModel: unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q5_K_XL.gguf
+  contextLength: 65536
+  kvCache: f16
+  mtp: on (n=4, p=0.5 — measured optimal on Vulkan at parallel=1)
+  engine: llama.cpp Vulkan
+  memoryNote: both models resident simultaneously; eviction is rare
+replacements: []
