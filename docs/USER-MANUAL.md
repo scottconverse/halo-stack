@@ -589,6 +589,23 @@ stop reading; any light names its cause and jumps to the right tab.
   `memory.json` live. (Origin story: first prototyped by the local brain
   itself as a Creator-mode cockpit plugin —
   `docs/experiments/creator-mode-2026-08-18.md`.)
+
+  **This graph ships in the repo — it is not a HALO-only tool.** It lives
+  entirely inside `mission-control/mission-control.mjs` (in master since
+  the v0.2.0 line, commits `895f9ad` + `1dd9e49`), self-contained per
+  Mission Control's zero-dependency rule: no CDN scripts, works fully
+  offline. It reads the **standard MCP memory-server JSONL format**
+  (`@modelcontextprotocol/server-memory`: one record per line, `entity`
+  rows with `name`/`entityType`/`observations`, `relation` rows with
+  `from`/`to`/`relationType`) with no HALO-specific fields — verified
+  2026-08-19 by pointing an isolated Mission Control instance at a
+  foreign machine's memory file: parse, force layout, labeled edges,
+  and the click-through detail panel all rendered it unmodified. Any
+  box that deploys from master and restarts Mission Control gets the
+  identical graph against its own `~\.dsh\memory\memory.json`. If a
+  deployed box shows the older text-list memory panel instead, its
+  clone predates these commits: `git pull`, `scripts\Deploy-ToLive.ps1`,
+  restart Mission Control.
 - **System** — memory/disk gauges, full version + engine list, a
   **Validate config** button (runs the harness's own `--dump-config` and
   reports unmatched patch rows), the memory-graph browser with the
