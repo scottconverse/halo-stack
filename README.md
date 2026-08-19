@@ -51,6 +51,17 @@ auth files are deliberately excluded from sync.
 - The memory graph (`~\.dsh\memory\memory.json`) is the one thing the harness cannot
   revert on its own; the scheduled task **HALO Memory Snapshot** takes hourly
   change-detected snapshots (last 60 kept) as compensation.
+- **The machines form a fleet.** LM Studio's LM Link pools models across the
+  linked boxes: a model loaded on one machine is callable from the other, and
+  identities resolve across the pool. Adopted with discipline rather than by
+  accident: each machine's identities carry a device suffix (HALO's are
+  canonical/unsuffixed) so a deploy can never silently run on the wrong
+  machine's compute; Mission Control badges every loaded model with its true
+  origin (resolved from `lms link status`, not name-guessing) and refuses
+  destructive actions on remote models server-side; benches abort if a
+  foreign model is generating. What it buys: clean-room cross-model audits on
+  owned silicon at $0, and fan-out to whichever box is fastest for the job.
+  Full section in the [USER-MANUAL](docs/USER-MANUAL.md).
 - **Full machine rebuild — the canonical checklist.** This list is the whole
   spec: every step, in order, nothing sourced from anywhere else. The deploy
   script's final **audit stage** checks the resulting machine state row by row
