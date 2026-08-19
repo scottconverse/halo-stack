@@ -40,7 +40,7 @@
             "output": ["text"]
           },
           "limit": {
-            "context": 65536,
+            "context": 131072,
             "output": 8192
           },
           "options": {

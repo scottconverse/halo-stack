@@ -86,16 +86,21 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    A["Double-click<br/>DeepSeek Harness"] --> B{":3080 already<br/>listening?"}
-    B -- yes --> Z["Open browser — done"]
-    B -- no --> C["Ensure LM Studio<br/>server is up"]
-    C --> D{"Q5 brain<br/>resident?"}
-    D -- no --> E["Load via pinned<br/>loader script"]
+    A["Double-click<br/>DeepSeek Harness"] --> C["Wait for LM Studio<br/>API (≤60 s)"]
+    C --> D{"Brain resident<br/>LOCALLY?<br/>(deviceIdentifier null)"}
+    D -- no --> E["Load via loader script<br/>logged, one retry"]
     D -- yes --> F
-    E --> F["Start harness<br/>(pinned npx)"]
-    F --> G["Wait until :3080<br/>answers (≤3 min cold)"]
+    E --> F{":3080 already<br/>serving?"}
+    F -- no --> G["Start harness<br/>(pinned npx)<br/>wait ≤3 min"]
+    F -- yes --> Z["Open browser"]
     G --> Z
 ```
+
+The brain check runs on **every** launch — an evicted brain reloads even
+when the cockpit is already up (the old early-exit skipped it), the check
+is federation-safe (a fleet device publishing the same identity can't
+satisfy it), and failures land in `~\.dsh\launcher.log` instead of
+vanishing.
 
 Diagrams render on GitHub's repo view. The full architecture rationale —
 source-level findings, config composition, permission model, bench data —
@@ -114,9 +119,7 @@ caveat is kept, not smoothed over.
 ### 1. Silicon — AMD Strix Halo
 
 **What:** an AMD Strix Halo APU with 128 GiB of physical unified memory
-shared between CPU and iGPU (no discrete VRAM). `mission-control.mjs` hardcodes
-`MACHINE_TOTAL_RAM = 128 * 1024³` bytes with an explicit comment: *"Machine has
-128 GiB unified physical RAM (Strix Halo APU)"*. The 128 GiB is split into a
+shared between CPU and iGPU (no discrete VRAM). The 128 GiB is split into a
 Windows-visible pool and a GPU carveout — currently 64 GiB / 64 GiB — set in
 AMD Adrenalin's VGM control, not by this stack. Memory bandwidth is
 ~256 GB/s.
@@ -131,15 +134,16 @@ behind almost every other decision in this document: it's why prefill reuse
 decode throughput, not compute, is what every model and engine choice below
 is measured against.
 
-**Proof:** `mission-control/mission-control.mjs` (`MACHINE_TOTAL_RAM` constant
-and its comment) is the live source for the 128 GiB total. The same file
-deliberately does **not** hardcode the 64/64 GiB VGM split — its own comment
-reads *"do NOT hardcode a fixed 64/64 number, it drifts"* — and instead
-computes the split at runtime from `os.totalmem()` vs. the GPU carveout. The
+**Proof:** Mission Control measures rather than assumes: the GPU carveout
+capacity is read at runtime from the display driver's registry entry
+(`qwMemorySize` — reports the VGM carveout on this APU and true VRAM on
+discrete cards; the 5070 Ti port forced this fix after an earlier
+hardcoded-128-GiB assumption produced nonsense on foreign hardware), and
+the Windows-visible pool comes from `os.totalmem()`. The
 ~256 GB/s bandwidth figure and the 5090 comparison are recorded in
 `Claude-Harness-HALO-Design-v2.md` §2 and `HALO-Stack-Monitor-Prompt.md`. If
-you're reading this on different hardware, re-measure — don't trust the
-64/64 number as a constant, the stack's own monitoring code refuses to.
+you're reading this on different hardware, nothing needs re-deriving — the
+monitoring reads your machine's real numbers.
 
 ### 2. Inference server — LM Studio + llama.cpp Vulkan engine
 
@@ -471,7 +475,7 @@ incident and its lesson are told in `docs/AUDIT-cordis-concepts-2026-08-18.md`
 
 | Claim | Number | Proven in |
 |---|---|---|
-| Unified memory total | 128 GiB | `mission-control/mission-control.mjs` (`MACHINE_TOTAL_RAM`) |
+| Unified memory total / GPU carveout | 128 GiB / measured at runtime from driver registry | `mission-control/mission-control.mjs` (`vramCapacityBytes`) |
 | VGM split (current — re-measure, don't assume) | 64 GiB carveout / 64 GiB Windows | `mission-control/mission-control.mjs` comment; `HALO-Stack-Monitor-Prompt.md` |
 | Memory bandwidth | ~256 GB/s | `Claude-Harness-HALO-Design-v2.md` §2 |
 | ROCm gfx1151 crash on non-small models | `lmstudio-ai/lms` #494 | `docs/phases/bench-day-2-results.md` |
@@ -776,6 +780,33 @@ enables.
 3. **Mission Control labels origin** on every resident model (local /
    device / FLEET-unknown) and alarms on live cross-origin contention —
    a remote load must never be a mystery again.
+
+## Generating large artifacts — the budgeted-emit pipeline
+
+The stack's one measured hard limit is the output-token wall: a single reply
+can never exceed the room left in the context window, the harness discards
+truncated tool calls entirely, and "continue" is a fresh generation, not a
+resume (all code-traced; proposals filed upstream as deepseek-harness
+discussion #3303). The window doubling to 131,072 moves the wall; the
+pipeline in [`pipeline/`](../pipeline/) makes it structurally unreachable
+for artifact generation:
+
+- Room is **measured** before every emission (never assumed), chunks are
+  capped deterministically below it, and the model only ever produces
+  bounded text ending in a completion sentinel — deterministic code is the
+  only thing that touches files.
+- Failures retry in **fresh context** (never against the fuller window that
+  just truncated), every loop is bounded, and exhaustion parks with a
+  decision record instead of stalling on a silent "continue" prompt.
+- Review is a **clean-room call to the local brain** — fresh, stateless, it
+  did not write what it judges. Cost-direction rule: an autonomous local
+  pipeline never calls a paid frontier model for a role the local model can
+  fill.
+
+Run it with `pipeline\run.ps1` after dropping a `task-brief.md` into
+`pipeline\runs\latest\`. Design and spec: `docs/design/budgeted-emit-*`;
+first validated run (19 emissions, zero stalls, reviewer catching real
+defects): `docs/design/budgeted-emit-dryrun-2026-08-19.md`.
 
 ## Instruction file
 
