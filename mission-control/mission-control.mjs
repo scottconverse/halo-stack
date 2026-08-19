@@ -792,6 +792,7 @@ async function status() {
       queuedInputs: [...mux.queues.values()].reduce((a, b) => a + b, 0),
     },
     memory: { entities: mem.entities.length, tripwire: MEMORY_ENTITY_TRIPWIRE, ...due },
+    loaders: { brain: loaderQuants().brain, worker: loaderQuants().worker },
     // RAM/GPU pools in GiB (binary) — matches AMD Adrenalin's VGM split units.
     // Disk stays decimal GB below — drives are marketed in decimal.
     ram: { totalGiB: gib(winTotal), freeGiB: gib(winFree), usedGiB: gib(winTotal - winFree) },
@@ -804,6 +805,26 @@ async function status() {
 }
 
 // ─────────────────────────── actions ───────────────────────────
+
+// Button labels come from the loader scripts' actual GGUF paths, not
+// hardcoded strings — after a port adapts a loader (e.g. Q5 -> Q3 on a
+// 16 GB box) a "Load Brain (Q5)" label would lie (issue #3).
+const loaderQuantCache = { at: 0, brain: null, worker: null };
+function loaderQuant(file) {
+  try {
+    const m = fs.readFileSync(file, 'utf8').match(/([A-Za-z0-9_.]*(?:IQ|Q)\d[A-Za-z0-9_]*)\.gguf/);
+    if (!m) return null;
+    const q = m[1].match(/(UD-)?(IQ|Q)\d[A-Za-z0-9_]*$/);
+    return q ? q[0] : null;
+  } catch { return null; }
+}
+function loaderQuants() {
+  if (Date.now() - loaderQuantCache.at < 60000 && loaderQuantCache.at) return loaderQuantCache;
+  loaderQuantCache.brain = loaderQuant(LOADER_Q5);
+  loaderQuantCache.worker = loaderQuant(LOADER_WORKER);
+  loaderQuantCache.at = Date.now();
+  return loaderQuantCache;
+}
 
 const ACTIONS = {
   'start-cockpit': () => spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', START_DSH], { detached: true, stdio: 'ignore' }).unref(),
@@ -923,8 +944,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 <div id="tab-models" class="tabpanel">
 <div class="card">
 <div class="filterbar">
-<button onclick="act('load-q5')">Load Brain (Q5)</button>
-<button onclick="act('load-worker')">Load Worker (MoE)</button>
+<button id="btn-load-brain" onclick="act('load-q5')">Load Brain</button>
+<button id="btn-load-worker" onclick="act('load-worker')">Load Worker</button>
 <button onclick="act('unload-worker')">Unload Worker</button>
 <button onclick="act('unload-all')">Unload All</button>
 </div>
@@ -1131,6 +1152,11 @@ function renderStrip(s){
 
 // ── overview ──
 function renderOverview(s){
+  if(s.loaders){
+    var lb=document.getElementById('btn-load-brain'), lw=document.getElementById('btn-load-worker');
+    if(lb&&s.loaders.brain) lb.textContent='Load Brain ('+s.loaders.brain+')';
+    if(lw&&s.loaders.worker) lw.textContent='Load Worker ('+s.loaders.worker+')';
+  }
   var svcRows=[
     ['Cockpit (:3080)',s.services.cockpit],
     ['LM Studio API (:1234)',s.services.lmstudio],
