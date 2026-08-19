@@ -121,12 +121,24 @@ if ($drifted.Count -gt 0) { Write-Warning "DEPLOY_FORCE=1 set - overwriting $($d
 else { Write-Host "no drift - live matches or is older than repo everywhere" }
 
 Write-Host "`n== stage: pre-validate (YAML syntax) =="
-$jsYamlPath = @(
-    "$U\.dsh\profiles\node_modules\js-yaml"
-    "$U\AppData\Local\npm-cache\_npx\2ede61d9d1d3d32e\node_modules\js-yaml"
-) | Where-Object { Test-Path $_ } | Select-Object -First 1
+# Borrow js-yaml from the dsh profile install or any npx cache entry (globbed,
+# never a hardcoded machine-specific hash -- issue #4). On a genuinely clean
+# machine neither exists yet: bootstrap by running dsh once (--dump-config
+# creates ~\.dsh\profiles including js-yaml), then re-resolve.
+function Resolve-JsYaml {
+    $candidates = @("$U\.dsh\profiles\node_modules\js-yaml")
+    $candidates += Get-ChildItem "$U\AppData\Local\npm-cache\_npx\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+    return $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+$jsYamlPath = Resolve-JsYaml
 if (-not $jsYamlPath) {
-    Write-Error "No js-yaml install found to borrow (checked dsh profile + npx cache). Aborting -- nothing live touched."
+    Write-Host "no js-yaml found - clean machine? bootstrapping the dsh profile (one-time npx run)..."
+    $env:DSH_PERMISSION_MODE = 'danger-full-access'
+    npx $dshPkg web --dump-config 2>&1 | Out-Null
+    $jsYamlPath = Resolve-JsYaml
+}
+if (-not $jsYamlPath) {
+    Write-Error "No js-yaml install found even after bootstrapping dsh (checked dsh profile + npx cache glob). Aborting -- nothing live touched."
     exit 1
 }
 $validatorScript = Join-Path $env:TEMP "dsh-deploy-yaml-validate.js"
@@ -240,4 +252,98 @@ Write-Host "live config composes clean - no unmatched patch targets"
 
 Write-Host "`nOK. staged -> validated -> backed up -> applied -> validated -> OK."
 Write-Host "Backups retained at: $backupRoot"
-Write-Host "`nDone. Subagent plugins per profile: npx @deepseek-ai/dsh@0.1.0-rc.7 plugin --profile <web|headless> add @deepseek-ai/dsh-subagent-codex@0.1.0-rc.7 @deepseek-ai/dsh-subagent-claude-code@0.1.0-rc.7 @deepseek-ai/dsh-subagent-acp@0.1.0-rc.7 @deepseek-ai/dsh-sdk-protocol@0.1.0-rc.7"
+
+# ---------------------------------------------------------------------------
+# The stages below run only AFTER the transactional pipeline succeeded. They
+# make the install self-enforcing: the USER-MANUAL's system-state table used
+# to exist only as prose, and two of its rows (LM Studio login service, the
+# memory-snapshot scheduled task) were silently missing after the 5070Ti
+# port because no script performed or checked them (issue #4). REGISTER
+# self-heals what a deploy can own; AUDIT reports every row loudly. The
+# audit is a report, not a gate -- it only fails the deploy for a gap the
+# deploy itself just caused.
+
+Write-Host "`n== stage: register (scheduled task: HALO Memory Snapshot) =="
+$snapTaskName = 'HALO Memory Snapshot'
+$snapScript = "$U\.dsh\memory\Snapshot-Memory.ps1"
+$registerOk = $false
+try {
+    # Native cmdlets, not schtasks (its string-quoting breaks on this
+    # argument shape -- observed on the 5070Ti port). Idempotent via -Force.
+    $snapAction = New-ScheduledTaskAction -Execute 'powershell.exe' `
+        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$snapScript`""
+    $snapTrigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).Date.AddMinutes(5)) `
+        -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration (New-TimeSpan -Days 3650)
+    $snapSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+    Register-ScheduledTask -TaskName $snapTaskName -Action $snapAction -Trigger $snapTrigger `
+        -Settings $snapSettings -Force | Out-Null
+    $registerOk = $true
+    Write-Host "  registered '$snapTaskName' (hourly, user-level, hidden) -> $snapScript"
+} catch {
+    Write-Warning "  could not register '$snapTaskName': $($_.Exception.Message)"
+}
+
+Write-Host "`n== stage: audit (USER-MANUAL system-state table vs this machine) =="
+$auditDeployCausedFailure = $false
+function Write-AuditRow {
+    param([string]$Label, [bool]$Pass, [string]$Detail = '')
+    if ($Pass) { Write-Host ("  PASS    {0}{1}" -f $Label, $(if ($Detail) { " ($Detail)" } else { '' })) }
+    else { Write-Warning ("MISSING $Label$(if ($Detail) { " ($Detail)" } else { '' })") }
+}
+
+# Row 1: LM Studio server answering on 127.0.0.1:1234
+$lmsApiUp = $false
+try {
+    $r = Invoke-WebRequest -Uri 'http://127.0.0.1:1234/v1/models' -UseBasicParsing -TimeoutSec 5
+    $lmsApiUp = ($r.StatusCode -eq 200)
+} catch { }
+Write-AuditRow 'LM Studio server reachable at 127.0.0.1:1234' $lmsApiUp
+
+# Row 2: LM Studio starts at login. Accept either mechanism: the app's own
+# login item (HKCU Run key, how HALO runs it) or a Startup-folder shortcut
+# running "lms server start" (the headless pattern used on the 5070Ti box).
+$runKeyHit = $false
+try {
+    $runVals = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction Stop).PSObject.Properties |
+        Where-Object { $_.Name -notlike 'PS*' -and ("$($_.Name) $($_.Value)" -match 'LM Studio|lms server') }
+    $runKeyHit = [bool]$runVals
+} catch { }
+$startupHit = [bool](Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match 'lms|LM.?Studio' })
+Write-AuditRow 'LM Studio login-service mechanism (Run key or Startup shortcut)' ($runKeyHit -or $startupHit) $(if ($runKeyHit) { 'Run key' } elseif ($startupHit) { 'Startup folder' } else { '' })
+
+# Row 3: memory-snapshot task registered and Ready. If the register stage
+# just succeeded this cannot be missing except by our own doing -- that one
+# IS deploy-caused and fails the deploy.
+$snapTask = Get-ScheduledTask -TaskName $snapTaskName -ErrorAction SilentlyContinue
+$snapOk = ($null -ne $snapTask -and $snapTask.State -in @('Ready', 'Running'))
+Write-AuditRow "scheduled task '$snapTaskName' registered and Ready" $snapOk $(if ($snapTask) { "state: $($snapTask.State)" } else { '' })
+if ($registerOk -and -not $snapOk) { $auditDeployCausedFailure = $true }
+
+# Row 4: desktop icons
+foreach ($icon in 'DeepSeek Harness', 'Mission Control') {
+    Write-AuditRow "desktop icon '$icon'" (Test-Path "$U\Desktop\$icon.lnk")
+}
+
+# Row 5: subagent plugins in both profiles
+foreach ($profile in 'web', 'headless') {
+    $missingPkgs = @('dsh-subagent-codex', 'dsh-subagent-claude-code', 'dsh-subagent-acp') |
+        Where-Object { -not (Test-Path "$U\.dsh\profiles\$profile\node_modules\@deepseek-ai\$_") }
+    Write-AuditRow "subagent plugins in profile '$profile'" ($missingPkgs.Count -eq 0) $(if ($missingPkgs) { "missing: $($missingPkgs -join ', ')" } else { 'codex + claude-code + acp' })
+}
+
+# Manual-by-preference (never auto-enabled, only reported): cockpit autostart
+# is deliberately OFF on HALO (phase-4 decision) -- the stack starts from the
+# desktop icon.
+$cockpitAutostart = [bool](Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match 'DSH|DeepSeek|Harness' })
+Write-Host ("  manual by preference: cockpit autostart is {0} (deliberate either way -- never auto-enabled by this script)" -f $(if ($cockpitAutostart) { 'ENABLED' } else { 'OFF' }))
+
+if ($auditDeployCausedFailure) {
+    Write-Error "Audit found a gap this deploy itself caused (see MISSING above). Deploy content applied and validated, but the machine state is incomplete."
+    exit 1
+}
+
+Write-Host "`nDone. If any row above says MISSING, fix it from the README's install checklist."
+Write-Host "Subagent plugins per profile: npx @deepseek-ai/dsh@0.1.0-rc.7 plugin --profile <web|headless> add @deepseek-ai/dsh-subagent-codex@0.1.0-rc.7 @deepseek-ai/dsh-subagent-claude-code@0.1.0-rc.7 @deepseek-ai/dsh-subagent-acp@0.1.0-rc.7 @deepseek-ai/dsh-sdk-protocol@0.1.0-rc.7"

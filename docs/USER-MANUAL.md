@@ -13,6 +13,12 @@ Daily operation of the local AI stack. For design rationale and bench data, see 
 | LM Studio inference server | `http://127.0.0.1:1234` | Runs as a service at login |
 | OpenCode | its own app | On demand (autostart removed on purpose) |
 
+This table is enforced, not just documented: `scripts\Deploy-ToLive.ps1` ends
+every run with an **audit stage** that checks each row (plus the memory-snapshot
+task, desktop icons, and subagent plugins) against the live machine and prints
+PASS/MISSING per row. The install steps themselves live in one place — the
+README's **Full machine rebuild** checklist.
+
 ## Architecture
 
 Two interactive surfaces share one inference server; the harness owns
