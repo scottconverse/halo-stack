@@ -573,15 +573,29 @@ stop reading; any light names its cause and jumps to the right tab.
   (Windows pool / GPU carveout / GPU **shared** — that last one should stay
   near 0: model bytes in the shared pool is the leak that caused the Aug-16
   OOM, and it alarms), delta-scan cadence, engine-drift detection, last
-  config validation, throughput vs bench baselines.
+  config validation, throughput vs bench baselines — and the full-width
+  **Machine vitals** timeline: the console's only view with a time axis.
+  GPU dedicated memory as an area with GPU **shared** stacked on top (a
+  healthy machine shows that band as a sliver; a growing one is the leak
+  developing), decode t/s on its own right-hand axis, hover for exact
+  values at any moment, and 1h / 6h / 24h / 7d ranges over the 60-second
+  history the stack has been recording since day one. Above it, six live
+  readouts: decode rate, GPU dedicated vs carveout, shared pool, Windows
+  free RAM, the fullest session's context, and how many models are
+  generating right now.
 - **Models** — the *entire* on-disk catalog (not just what's loaded) with
   quant/size/max-context, TTL countdowns on loaded models, and per-model
   Load (asks for context length) / Unload. Quick buttons for Brain/Worker
   remain. Amber badge if anything is loaded at ≥200K context (the
   silent-huge-context trap).
-- **Sessions** — real titles, tokens in/out, TTFT, decode t/s per session;
-  dead drive-root-bug sessions are hidden behind a toggle and badged when
-  shown. Click a row for the full ID and a cockpit link.
+- **Sessions** — real titles, tokens in/out, TTFT, decode t/s per session,
+  and a **Context** column showing exactly how full each session's window
+  is: the percentage, the token counts (used / window / remaining), amber
+  from 70% and red from 85%. That number predicts the output-token wall —
+  a reply can never exceed the room left, so a red session is one where a
+  large single emission will truncate. Dead drive-root-bug sessions are
+  hidden behind a toggle and badged when shown. Click a row for the full
+  ID and a cockpit link.
 - **Plugins** — all 166 config rows with **plain-language descriptions**
   (mined from the harness's own package metadata on disk, not invented),
   live search that matches descriptions too, and abnormal rows sorted to
