@@ -41,7 +41,7 @@ flowchart TD
 
     subgraph INFERENCE["One inference server — one iGPU, one memory bus"]
         LMS["LM Studio API · :1234"]
-        LMS --> BRAIN["BRAIN · Qwen3.8-27B Q5_K_XL<br/>resident 21 GB · 65,536 ctx · vision<br/>prefill cached across turns (8.1×)"]
+        LMS --> BRAIN["BRAIN · Qwen3.8-27B Q5_K_XL<br/>resident ~27 GB · 131,072 ctx · KV q8_0 · vision<br/>prefill cached across turns (8.1×)"]
         LMS --> WORKER["WORKER · Qwen3 Coder 30B MoE<br/>on-demand · 2 h TTL · ~16 GB returned idle<br/>fan-out at 4.3× task speed"]
     end
 
@@ -122,7 +122,7 @@ AMD Adrenalin's VGM control, not by this stack. Memory bandwidth is
 ~256 GB/s.
 
 **Why:** unified memory is the entire reason a 21 GB-class dense brain, a
-16 GB-class MoE worker, and a 65,536-token KV cache can all be resident at
+16 GB-class MoE worker, and a 131,072-token KV cache (q8_0) can all be resident at
 once on one box. A discrete 16–24 GB card cannot hold this working set —
 this stack's two-model, long-context design would not fit on one. The
 ~256 GB/s bandwidth ceiling (vs. a 5090's ~1,792 GB/s) is the real constraint
@@ -195,7 +195,7 @@ acceptance rates are in `docs/phases/bench-day-2-results.md`.
 ### 3. Models
 
 **Brain — Qwen3.8-27B UD-Q5_K_XL** (unsloth dynamic quant), dense, loaded at
-65,536-token context, vision-capable, under the stable identity
+131,072-token context (adopted 2026-08-19, `docs/phases/bench-window-131k.md` — KV q8_0 makes the doubled window cost what 65,536/f16 did), vision-capable, under the stable identity
 `qwen/qwen3.8-27b`. Resident memory measured at 19.7 GB (the architecture
 diagram above rounds this to 21 GB). Measured on a 19.6K-token probe
 prompt: fresh prefill 181 tok/s (TTFT 108.6 s cold) → 13.4 s cached
@@ -286,7 +286,7 @@ session log is append-only, and compaction/pruning/plan-mode are all
 engineered as cache-safe surface replacements. This means prefill (the
 expensive prompt-reading step) is paid once per session, not once per turn
 — the 8.1× TTFT figure in §3 above is this invariant cashing out in a real
-measurement. Compaction is the one planned exception: at the 65,536-context
+measurement. Compaction is the one planned exception: at the 131,072-context
 brain's compaction settings (80% trigger / 16% retain / 8,192-token summary
 cap), a compaction event costs one deliberate re-prefill, measured at ~80 s
 in production shape (TTFT sequence: 157 s cold → 13 s cached → 80 s
@@ -480,7 +480,7 @@ incident and its lesson are told in `docs/AUDIT-cordis-concepts-2026-08-18.md`
 | MTP stock config optimal | n=4 draft tokens, p=0.5 continue-probability | `lmstudio/Load-OpenCode-Qwen.mjs`, `lmstudio/Sweep-MTP.mjs` |
 | MTP draft acceptance | 52.4% prose / 86.5% structured | `docs/phases/bench-day-2-results.md` |
 | Brain resident memory | 19.7 GB measured (21 GB in diagram) | `docs/phases/phase2-bench-results.md` |
-| Brain context window | 65,536 tokens | `dsh/settings.yaml` |
+| Brain context window | 131,072 tokens (KV q8_0; bench-window-131k.md) | `dsh/settings.yaml` |
 | Brain fresh prefill / cold TTFT | 181 tok/s / 108.6 s (19.6K-tok probe) | `docs/phases/phase2-bench-results.md` |
 | Brain cached TTFT | 13.4 s (8.1×) | `docs/phases/phase2-bench-results.md` |
 | Brain decode, solo / concurrent | 26.9 / 19.0 tok/s (−29%) | `docs/phases/phase2-bench-results.md` |
@@ -724,7 +724,7 @@ documented Windows workarounds (nothing new surfaced).
   don't match the loader profile ("eviction JIT-reload suspected").
 - **LM Studio auto-sizes context to leftover VRAM** on current builds
   (requested 32768 → applied 32000 with f16 KV, 40448 with q8_0). HALO's
-  loader asserts `contextLength === 65536` exactly; if an LM Studio update
+  loader asserts `contextLength === 131072` exactly; if an LM Studio update
   brings that behavior here, the assertion may start failing for this
   reason rather than a real misconfiguration.
 

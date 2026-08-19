@@ -27,7 +27,7 @@ const model = await client.llm.load(modelPath, {
     maxParallelPredictions: 1,
     useUnifiedKvCache: true,
     offloadKVCacheToGpu: true,
-    contextLength: 65536,
+    contextLength: 131072,
     evalBatchSize: 2048,
     physicalBatchSize: 512,
     flashAttention: true,
@@ -39,11 +39,14 @@ const model = await client.llm.load(modelPath, {
     speculativeDraftMinTokens: 0,
     speculativeDraftMinContinueProbability: 0.5,
     keepModelInMemory: false,
-    useFp16ForKVCache: true,
+    // KV q8_0 at ctx 131072: same GPU footprint as the old 65536/f16 config
+    // (q8_0 halves KV bytes), decode parity proven both shallow and deep --
+    // docs/phases/bench-window-131k.md, ADOPT verdict 2026-08-19.
+    useFp16ForKVCache: false,
     tryMmap: false,
     tryDirectIO: false,
-    llamaKCacheQuantizationType: false,
-    llamaVCacheQuantizationType: false,
+    llamaKCacheQuantizationType: "q8_0",
+    llamaVCacheQuantizationType: "q8_0",
   },
 });
 
@@ -56,7 +59,7 @@ const expected = {
   maxParallelPredictions: [config.maxParallelPredictions, 1],
   useUnifiedKvCache: [config.useUnifiedKvCache, true],
   offloadKVCacheToGpu: [config.offloadKVCacheToGpu, true],
-  contextLength: [config.contextLength, 65536],
+  contextLength: [config.contextLength, 131072],
   evalBatchSize: [config.evalBatchSize, 2048],
   physicalBatchSize: [config.physicalBatchSize, 512],
   flashAttention: [config.flashAttention, true],
@@ -65,7 +68,9 @@ const expected = {
   speculativeDraftMaxTokens: [config.speculativeDraftMaxTokens, 4],
   speculativeDraftMinContinueProbability: [config.speculativeDraftMinContinueProbability, 0.5],
   keepModelInMemory: [config.keepModelInMemory, false],
-  useFp16ForKVCache: [config.useFp16ForKVCache, true],
+  useFp16ForKVCache: [config.useFp16ForKVCache, false],
+  llamaKCacheQuantizationType: [config.llamaKCacheQuantizationType, "q8_0"],
+  llamaVCacheQuantizationType: [config.llamaVCacheQuantizationType, "q8_0"],
   tryMmap: [config.tryMmap, false],
 };
 const mismatches = Object.entries(expected)

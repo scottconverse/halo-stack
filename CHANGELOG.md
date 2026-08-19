@@ -6,6 +6,23 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Window doubled: brain now runs ctx 131072 with KV q8_0**
+  (`docs/phases/bench-window-131k.md`, ADOPT verdict): same GPU footprint
+  as the old 65536/f16 config (q8_0 halves KV bytes), prefill parity at
+  19.5K (179.6 vs 181 tok/s), 9.0 tok/s decode at ~110K depth, zero
+  shared-pool growth. Phase 1 of the output-wall plan: reply room roughly
+  doubles, the budgeted-emit chunk cap rises with it automatically. Found
+  along the way: the model's trained max is 262144 - the old 65536 was a
+  config choice, not a ceiling. `machines/5070ti.yml` updated in the same
+  change (its KV replacements are now inherited from base; ctx finds
+  re-pointed) so the profile cannot rot against the new loader.
+- **Budgeted-emit pipeline** (`pipeline/`, from
+  `docs/design/budgeted-emit-pipeline.spec.json`): generative work of any
+  size without ever hitting the output-token wall - room measured before
+  every emit, chunks capped deterministically, sentinel truncation
+  detection, retries always in fresh context, clean-room LOCAL review
+  (cost-direction rule: local pipelines never call paid frontier models).
+  Upstream resilience proposals filed as deepseek-harness discussion #3303.
 - **Per-machine profiles** (`machines/`, issue #6): master's files stay
   HALO-canonical literals; a non-HALO box deploys with `MACHINE=<name>` and
   the deploy renders `machines/<name>.yml` replacements over the base files

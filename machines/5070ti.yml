@@ -48,13 +48,15 @@ replacements:
   - file: lmstudio\Load-OpenCode-Qwen.mjs
     find: "Qwen3.8-27B-UD-Q5_K_XL.gguf"
     replace: "Qwen3.8-27B-UD-Q3_K_XL.gguf"
+  # Since the 2026-08-19 window adoption, base HALO already runs KV q8_0 -
+  # the KV replacements this profile used to carry are inherited for free.
   - file: lmstudio\Load-OpenCode-Qwen.mjs
-    find: "contextLength: 65536,"
+    find: "contextLength: 131072,"
     replace: "contextLength: 32768,"
   # ctx assert: server auto-sizes (32768 -> 32000/40448), so exact-match
   # becomes a floor check
   - file: lmstudio\Load-OpenCode-Qwen.mjs
-    find: "contextLength: [config.contextLength, 65536],"
+    find: "contextLength: [config.contextLength, 131072],"
     replace: "contextLength: [config.contextLength >= 24576, true],"
   - file: lmstudio\Load-OpenCode-Qwen.mjs
     find: "speculativeDraftMtp: true,"
@@ -62,18 +64,6 @@ replacements:
   - file: lmstudio\Load-OpenCode-Qwen.mjs
     find: "speculativeDraftMtp: [config.speculativeDraftMtp, true],"
     replace: "speculativeDraftMtp: [config.speculativeDraftMtp, false],"
-  - file: lmstudio\Load-OpenCode-Qwen.mjs
-    find: "useFp16ForKVCache: true,"
-    replace: "useFp16ForKVCache: false,"
-  - file: lmstudio\Load-OpenCode-Qwen.mjs
-    find: "useFp16ForKVCache: [config.useFp16ForKVCache, true],"
-    replace: "useFp16ForKVCache: [config.useFp16ForKVCache, false],"
-  - file: lmstudio\Load-OpenCode-Qwen.mjs
-    find: "llamaKCacheQuantizationType: false,"
-    replace: "llamaKCacheQuantizationType: \"q8_0\","
-  - file: lmstudio\Load-OpenCode-Qwen.mjs
-    find: "llamaVCacheQuantizationType: false,"
-    replace: "llamaVCacheQuantizationType: \"q8_0\","
   # -- worker loader: ctx assert becomes a floor (auto-sizing) --
   - file: lmstudio\Load-Worker-Coder.mjs
     find: "if (config.contextLength !== 32768) {"
