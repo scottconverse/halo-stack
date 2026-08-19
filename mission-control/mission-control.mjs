@@ -1131,11 +1131,15 @@ function fmtRel(ms){
   var h=Math.round(m/60); if(h<24) return h+'h ago';
   return Math.round(h/24)+'d ago';
 }
+// "TTL 1429:57" read as minutes:seconds for what is really 23h 49m - a
+// clock format nobody parses at a glance. Use plain units.
 function fmtTtl(ttlMs,lastUsedTime){
   if(ttlMs==null||lastUsedTime==null) return 'on disk';
   var remain=ttlMs-(Date.now()-lastUsedTime); if(remain<0) remain=0;
-  var mm=Math.floor(remain/60000), ss=Math.floor((remain%60000)/1000);
-  return mm+':'+(ss<10?'0':'')+ss;
+  var mins=Math.floor(remain/60000);
+  if(mins>=60){ var h=Math.floor(mins/60); return h+'h '+(mins%60)+'m'; }
+  if(mins>=1) return mins+'m';
+  return Math.floor(remain/1000)+'s';
 }
 
 var currentTab='overview';
@@ -1257,14 +1261,19 @@ function renderStrip(s){
 }
 
 // ── overview ──
+// Loader-derived button labels. These buttons live on the MODELS tab, so
+// setting them from the overview renderer left them unlabelled unless you
+// happened to visit Overview first - call this from the status poll instead,
+// which runs on every tab.
+function applyLoaderLabels(s){
+  if(!s||!s.loaders) return;
+  var lb=document.getElementById('btn-load-brain'), lw=document.getElementById('btn-load-worker');
+  if(lb&&s.loaders.brain) lb.textContent='Load Brain ('+s.loaders.brain+')';
+  if(lw&&s.loaders.worker) lw.textContent='Load Worker ('+s.loaders.worker+')';
+}
 function renderOverview(s){
   lastStatus=s;
   renderVitalsHead();
-  if(s.loaders){
-    var lb=document.getElementById('btn-load-brain'), lw=document.getElementById('btn-load-worker');
-    if(lb&&s.loaders.brain) lb.textContent='Load Brain ('+s.loaders.brain+')';
-    if(lw&&s.loaders.worker) lw.textContent='Load Worker ('+s.loaders.worker+')';
-  }
   var svcRows=[
     ['Cockpit (:3080)',s.services.cockpit],
     ['LM Studio API (:1234)',s.services.lmstudio],
@@ -1710,7 +1719,7 @@ function renderSystem(s){
   document.getElementById('sys-versions').innerHTML=vv;
   var val=s.validation;
   document.getElementById('sys-validate').innerHTML=val?
-    ('<div class="row"><span class="k">last run</span><span>'+new Date(val.when).toLocaleString()+'</span></div>'+
+    ('<div class="row"><span class="k">last run</span><span>'+fmtStamp(val.when)+'</span></div>'+
      '<div class="row"><span class="k">result</span><span'+(val.ok?' style="color:var(--green)"':' style="color:var(--red)"')+'>'+(val.ok?'ok':'issues found')+'</span></div>'+
      (val.warnings&&val.warnings.length?'<div class="mut" style="margin-top:6px">'+val.warnings.map(esc).join('<br>')+'</div>':''))
     : '<div class="mut">never run</div>';
@@ -1721,7 +1730,7 @@ async function validateConfig(){
     var r=await (await fetch('/api/validate-config',{method:'POST'})).json();
     renderSystem(lastStatus||{services:{},ram:{},gpu:{},disk:{}});
     document.getElementById('sys-validate').innerHTML=
-      '<div class="row"><span class="k">last run</span><span>'+new Date(r.when).toLocaleString()+'</span></div>'+
+      '<div class="row"><span class="k">last run</span><span>'+fmtStamp(r.when)+'</span></div>'+
       '<div class="row"><span class="k">result</span><span'+(r.ok?' style="color:var(--green)"':' style="color:var(--red)"')+'>'+(r.ok?'ok':'issues found')+'</span></div>'+
       (r.warnings&&r.warnings.length?'<div class="mut" style="margin-top:6px">'+r.warnings.map(esc).join('<br>')+'</div>':'');
     refreshStatus();
@@ -1739,11 +1748,15 @@ async function loadMemoryGraph(){
   }catch(e){ document.getElementById('sys-memgraph').innerHTML='<div class="mut">memory graph read failed</div>' }
 }
 function toggleObs(i){ var el=document.getElementById('obs-'+i); if(el) el.style.display=(el.style.display==='none'?'block':'none') }
-async function loadLogtail(){
+async function loadLogtail(raw){
   try{
-    var r=await (await fetch('/api/logtail')).json();
+    var r=await (await fetch('/api/logtail'+(raw?'?raw=1':''))).json();
     if(r.error){ document.getElementById('sys-logtail').innerHTML='<div class="mut">no LM Studio log file found</div>'; return }
-    document.getElementById('sys-logtail').innerHTML='<div class="mut" style="margin-bottom:6px">'+esc(r.file)+'</div><pre style="white-space:pre-wrap;font-size:.78rem;max-height:400px;overflow:auto;margin:0">'+esc(r.lines.join('\\n'))+'</pre>';
+    document.getElementById('sys-logtail').innerHTML=
+      '<div class="mut" style="margin-bottom:6px">'+esc(r.file)+
+      (r.filtered?' &middot; '+r.dropped+' routine polling lines hidden <a href="#" onclick="loadLogtail(1);return false">show raw</a>':'')+
+      '</div><pre style="white-space:pre-wrap;font-size:.78rem;max-height:400px;overflow:auto;margin:0">'+
+      (r.lines.length?esc(r.lines.join('\\n')):'no notable log lines &mdash; only routine polling')+'</pre>';
   }catch(e){ document.getElementById('sys-logtail').innerHTML='<div class="mut">log tail failed</div>' }
 }
 
@@ -2291,6 +2304,8 @@ async function refreshStatus(){
     lastStatus=s;
     document.getElementById('stamp').textContent=new Date(s.time).toLocaleTimeString();
     renderStrip(s);
+    lastStatus=s;
+    applyLoaderLabels(s);
     if(currentTab==='overview') renderOverview(s);
     if(currentTab==='system') renderSystem(s);
   }catch(e){ document.getElementById('stamp').textContent='status fetch failed' }
@@ -2387,9 +2402,17 @@ const server = http.createServer(async (req, res) => {
         const files = fs.readdirSync(monthDir).filter(f => f.endsWith('.log')).sort();
         if (!files.length) throw new Error('no log files');
         const file = path.join(monthDir, files[files.length - 1]);
-        const lines = fs.readFileSync(file, 'utf8').split('\n');
+        const all = fs.readFileSync(file, 'utf8').split('\n');
+        // The raw tail is ~90% LMSAuthenticator polling chatter (getLoadConfig /
+        // getModelInfo / getInstanceProcessingState with long instance hashes),
+        // which buries the lines an operator actually needs - loads, unloads,
+        // errors, engine messages. Filter by default; ?raw=1 shows everything.
+        const NOISE = /\[LMSAuthenticator\]|Getting (load config stack|descriptor|instance processing state)|Listing (loaded|downloaded) models|Client (created|disconnected)/;
+        const raw = url.searchParams.get('raw') === '1';
+        const kept = raw ? all : all.filter(l => l.trim() && !NOISE.test(l));
+        const lines = kept.slice(-80);
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ error: false, file, lines: lines.slice(-80) }));
+        res.end(JSON.stringify({ error: false, file, lines, filtered: !raw, dropped: raw ? 0 : all.filter(l => l.trim()).length - kept.length }));
       } catch {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: true, file: null, lines: [] }));
