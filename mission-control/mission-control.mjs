@@ -659,6 +659,34 @@ async function appendHistory() {
   } catch { /* best effort, never crash the poller */ }
 }
 
+// Time-series for the vitals chart. Field names drifted mid-collection
+// (winFreeGB -> winFreeGiB etc.) — accept both rather than losing the older
+// half of the record. Downsampled on the wire: past ~400 points a chart this
+// size draws noise, not information.
+function readHistoryRange(sinceMs, maxPoints = 400) {
+  try {
+    const lines = fs.readFileSync(HISTORY_FILE, 'utf8').split('\n').filter(Boolean);
+    const rows = [];
+    for (const line of lines) {
+      let r;
+      try { r = JSON.parse(line); } catch { continue; }
+      if (!r.t || r.t < sinceMs) continue;
+      rows.push({
+        t: r.t,
+        decodeTps: r.decodeTps ?? null,
+        winFree: r.winFreeGiB ?? r.winFreeGB ?? null,
+        gpuDed: r.gpuDedGiB ?? r.gpuDedGB ?? null,
+        gpuShared: r.gpuSharedGiB ?? r.gpuSharedGB ?? null,
+      });
+    }
+    if (rows.length <= maxPoints) return rows;
+    const stride = Math.ceil(rows.length / maxPoints);
+    const out = rows.filter((_, i) => i % stride === 0);
+    if (out[out.length - 1] !== rows[rows.length - 1]) out.push(rows[rows.length - 1]);
+    return out;
+  } catch { return []; }
+}
+
 function readHistorySpark(n = 40) {
   try {
     const lines = fs.readFileSync(HISTORY_FILE, 'utf8').split('\n').filter(Boolean).slice(-n);
@@ -892,6 +920,15 @@ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.82rem;margin
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
 .card h2{font-size:.92rem;margin:0 0 10px;color:#dcecff}
+.card.wide{grid-column:1/-1}
+.vrange{float:right;display:flex;gap:4px}
+.vrange button{margin:0;padding:3px 9px;font-size:.72rem}
+.vrange button.on{background:#1c5570;border-color:var(--teal);color:#fff}
+.vitals-head{display:flex;flex-wrap:wrap;gap:26px;margin:2px 0 12px}
+.vstat b{display:block;font-size:1.45rem;color:#eaf4ff;font-weight:700;line-height:1.15}
+.vstat span{color:var(--mut);font-size:.74rem;letter-spacing:.03em}
+.vstat b.warn{color:var(--amber)}.vstat b.bad{color:var(--red)}
+.vtip{position:absolute;pointer-events:none;background:#0b1826;border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:.76rem;color:#dcecff;white-space:nowrap;display:none;z-index:5}
 .row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #1a2c42;font-size:.87rem}
 .row:last-child{border:none}.k{color:var(--mut);text-align:right}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;flex:none}
@@ -977,6 +1014,17 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 <div class="card"><h2>Today</h2><div id="ov-today"></div></div>
 <div class="card"><h2>Throughput</h2><div id="ov-throughput"></div></div>
 <div class="card"><h2>Fleet (LM Link)</h2><div id="ov-fleet"></div></div>
+<div class="card wide">
+<h2>Machine vitals
+<span class="vrange">
+<button data-vh="1" onclick="setVitalsRange(1)">1h</button>
+<button data-vh="6" class="on" onclick="setVitalsRange(6)">6h</button>
+<button data-vh="24" onclick="setVitalsRange(24)">24h</button>
+<button data-vh="168" onclick="setVitalsRange(168)">7d</button>
+</span></h2>
+<div id="ov-vitals-head" class="vitals-head"></div>
+<div id="ov-vitals"></div>
+</div>
 </div>
 </div>
 
@@ -1086,6 +1134,7 @@ function showTab(name){
   onTabShown(name);
 }
 function onTabShown(name){
+  if(name==='overview') loadVitals();
   if(name==='models') loadModels();
   if(name==='sessions') loadSessions();
   if(name==='plugins') loadPlugins();
@@ -1194,6 +1243,8 @@ function renderStrip(s){
 
 // ── overview ──
 function renderOverview(s){
+  lastStatus=s;
+  renderVitalsHead();
   if(s.loaders){
     var lb=document.getElementById('btn-load-brain'), lw=document.getElementById('btn-load-worker');
     if(lb&&s.loaders.brain) lb.textContent='Load Brain ('+s.loaders.brain+')';
@@ -1278,6 +1329,129 @@ function renderOverview(s){
   }).join('') : '<div class="mut">no models resident</div>';
   document.getElementById('ov-fleet').innerHTML=fleetHtml;
 }
+// ── Machine vitals: the console's only view with a TIME axis ──────────
+// Every other card is a point-in-time reading, which cannot answer "is this
+// getting worse?". The 60s history has been collected since day one and was
+// rendered as a 220px sparkline; this spends it properly. Series chosen for
+// what actually goes wrong on this box: GPU dedicated (what models occupy),
+// GPU shared stacked on top (the OOM leak signature — it must stay a sliver),
+// and decode t/s (the felt speed) on its own axis.
+var vitalsHours=6, vitalsRows=[];
+function setVitalsRange(h){
+  vitalsHours=h;
+  var btns=document.querySelectorAll('.vrange button');
+  for(var i=0;i<btns.length;i++){ btns[i].className=(Number(btns[i].getAttribute('data-vh'))===h?'on':''); }
+  loadVitals();
+}
+async function loadVitals(){
+  try{
+    var r=await (await fetch('/api/history?hours='+vitalsHours)).json();
+    vitalsRows=r.rows||[];
+    renderVitals();
+  }catch(e){ document.getElementById('ov-vitals').innerHTML='<div class="mut">history unavailable</div>'; }
+}
+function fmtClock(ms,span){
+  var d=new Date(ms);
+  var hh=('0'+d.getHours()).slice(-2), mm=('0'+d.getMinutes()).slice(-2);
+  if(span>36*3600000) return (d.getMonth()+1)+'/'+d.getDate()+' '+hh+':00';
+  return hh+':'+mm;
+}
+function renderVitals(){
+  var el=document.getElementById('ov-vitals'), rows=vitalsRows;
+  renderVitalsHead();
+  if(rows.length<2){ el.innerHTML='<div class="mut">not enough history in this range &mdash; vitals sample every 60 s</div>'; return; }
+  var W=1000,H=252,L=54,R=950,T=14,B=206;
+  var t0=rows[0].t, t1=rows[rows.length-1].t, span=(t1-t0)||1;
+  var maxMem=0,maxTps=0;
+  rows.forEach(function(r){
+    var tot=(r.gpuDed||0)+(r.gpuShared||0);
+    if(tot>maxMem) maxMem=tot;
+    if(r.decodeTps!=null&&r.decodeTps>maxTps) maxTps=r.decodeTps;
+  });
+  maxMem=Math.max(maxMem*1.15,8); maxTps=Math.max(maxTps*1.25,10);
+  var x=function(t){return L+((t-t0)/span)*(R-L)};
+  var yM=function(v){return B-(v/maxMem)*(B-T)};
+  var yT=function(v){return B-(v/maxTps)*(B-T)};
+  var dedPts=[],totPts=[];
+  rows.forEach(function(r){
+    var d=r.gpuDed||0,s=r.gpuShared||0;
+    dedPts.push(x(r.t).toFixed(1)+','+yM(d).toFixed(1));
+    totPts.push(x(r.t).toFixed(1)+','+yM(d+s).toFixed(1));
+  });
+  var areaDed='M'+dedPts.join('L')+'L'+R.toFixed(1)+','+B+'L'+L.toFixed(1)+','+B+'Z';
+  var areaShared='M'+totPts.join('L')+'L'+dedPts.slice().reverse().join('L')+'Z';
+  // Decode is sampled only when a session has run; break the line on gaps
+  // rather than drawing a straight lie across idle time.
+  var segs=[],cur=[];
+  rows.forEach(function(r){
+    if(r.decodeTps==null){ if(cur.length>1) segs.push(cur); cur=[]; return; }
+    cur.push(x(r.t).toFixed(1)+','+yT(r.decodeTps).toFixed(1));
+  });
+  if(cur.length>1) segs.push(cur);
+  var tpsPath=segs.map(function(s){return 'M'+s.join('L')}).join(' ');
+  var grid='',i;
+  for(i=0;i<=4;i++){
+    var gy=T+(B-T)*i/4, memV=maxMem*(1-i/4), tpsV=maxTps*(1-i/4);
+    grid+='<line x1="'+L+'" y1="'+gy.toFixed(1)+'" x2="'+R+'" y2="'+gy.toFixed(1)+'" stroke="#1b2f47"/>'+
+      '<text x="'+(L-7)+'" y="'+(gy+3.5).toFixed(1)+'" fill="#7f95ab" font-size="10" text-anchor="end">'+memV.toFixed(0)+'</text>'+
+      '<text x="'+(R+7)+'" y="'+(gy+3.5).toFixed(1)+'" fill="#6ea8ff" font-size="10">'+tpsV.toFixed(0)+'</text>';
+  }
+  var xlab='';
+  for(i=0;i<=4;i++){
+    var tt=t0+span*i/4;
+    xlab+='<text x="'+x(tt).toFixed(0)+'" y="'+(B+17)+'" fill="#7f95ab" font-size="10" text-anchor="middle">'+fmtClock(tt,span)+'</text>';
+  }
+  el.innerHTML=
+    '<div style="position:relative">'+
+    '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="display:block" id="vitals-svg">'+
+      grid+xlab+
+      '<path d="'+areaDed+'" fill="#4fd8c4" fill-opacity=".16"/>'+
+      '<polyline points="'+dedPts.join(' ')+'" fill="none" stroke="#4fd8c4" stroke-width="1.6"/>'+
+      '<path d="'+areaShared+'" fill="#ffc86b" fill-opacity=".34"/>'+
+      '<path d="'+tpsPath+'" fill="none" stroke="#6ea8ff" stroke-width="1.8" stroke-linejoin="round"/>'+
+      '<line id="vx" x1="0" y1="'+T+'" x2="0" y2="'+B+'" stroke="#8fb6d6" stroke-dasharray="3 3" style="display:none"/>'+
+      '<rect x="'+L+'" y="'+T+'" width="'+(R-L)+'" height="'+(B-T)+'" fill="transparent" id="vhit"/>'+
+      '<text x="'+L+'" y="'+(H-4)+'" fill="#4fd8c4" font-size="10">GPU dedicated (GiB)</text>'+
+      '<text x="'+(L+150)+'" y="'+(H-4)+'" fill="#ffc86b" font-size="10">GPU shared &mdash; leak signal</text>'+
+      '<text x="'+(L+330)+'" y="'+(H-4)+'" fill="#6ea8ff" font-size="10">decode t/s (right axis)</text>'+
+    '</svg><div class="vtip" id="vtip"></div></div>';
+  var svg=document.getElementById('vitals-svg'), hit=document.getElementById('vhit'),
+      tip=document.getElementById('vtip'), vx=document.getElementById('vx');
+  hit.addEventListener('mousemove',function(ev){
+    var box=svg.getBoundingClientRect(), sx=(ev.clientX-box.left)/box.width*W;
+    var frac=(sx-L)/(R-L); if(frac<0)frac=0; if(frac>1)frac=1;
+    var want=t0+span*frac, best=rows[0], bd=Infinity;
+    rows.forEach(function(r){ var d=Math.abs(r.t-want); if(d<bd){bd=d;best=r;} });
+    vx.setAttribute('x1',x(best.t)); vx.setAttribute('x2',x(best.t)); vx.style.display='';
+    tip.style.display='block';
+    tip.style.left=Math.min(Math.max(ev.clientX-box.left-60,0),box.width-190)+'px';
+    tip.style.top='6px';
+    tip.innerHTML='<b>'+fmtClock(best.t,span)+'</b><br>'+
+      'GPU dedicated: '+(best.gpuDed!=null?best.gpuDed+' GiB':'&mdash;')+'<br>'+
+      'GPU shared: '+(best.gpuShared!=null?best.gpuShared+' GiB':'&mdash;')+'<br>'+
+      'decode: '+(best.decodeTps!=null?best.decodeTps+' t/s':'idle')+'<br>'+
+      'Windows free: '+(best.winFree!=null?best.winFree+' GiB':'&mdash;');
+  });
+  hit.addEventListener('mouseleave',function(){ tip.style.display='none'; vx.style.display='none'; });
+}
+function renderVitalsHead(){
+  var s=lastStatus, head=document.getElementById('ov-vitals-head');
+  if(!s){ head.innerHTML=''; return; }
+  var last=null;
+  for(var i=vitalsRows.length-1;i>=0;i--){ if(vitalsRows[i].decodeTps!=null){ last=vitalsRows[i]; break; } }
+  var sharedCls=s.gpu.sharedGiB>8?'bad':(s.gpu.sharedGiB>3?'warn':'');
+  var freeCls=s.ram.freeGiB<6?'bad':(s.ram.freeGiB<12?'warn':'');
+  var worst=s.contextPressure;
+  var ctxCls=worst?(worst.worstPct>=85?'bad':(worst.worstPct>=70?'warn':'')):'';
+  var gen=s.models.filter(function(m){return m.status==='generating'}).length;
+  head.innerHTML=
+    '<div class="vstat"><b>'+(last?last.decodeTps:'&mdash;')+'</b><span>decode t/s (last run)</span></div>'+
+    '<div class="vstat"><b>'+s.gpu.dedicatedGiB+(s.gpu.carveoutGiB!=null?' <span class="mut" style="font-size:.62em">/ '+s.gpu.carveoutGiB+'</span>':'')+'</b><span>GPU dedicated GiB</span></div>'+
+    '<div class="vstat"><b class="'+sharedCls+'">'+s.gpu.sharedGiB+'</b><span>GPU shared GiB (want ~0)</span></div>'+
+    '<div class="vstat"><b class="'+freeCls+'">'+s.ram.freeGiB+'</b><span>Windows free GiB</span></div>'+
+    '<div class="vstat"><b class="'+ctxCls+'">'+(worst?worst.worstPct+'%':'&mdash;')+'</b><span>fullest session context</span></div>'+
+    '<div class="vstat"><b>'+gen+'</b><span>models generating now</span></div>';
+}
 function sparkSvg(vals){
   var pts=(vals||[]).filter(function(v){return v!=null});
   if(pts.length<2) return '';
@@ -1335,9 +1509,17 @@ var openSession=null;
 function ctxCell(s){
   if(s.ctxPct==null) return '<span class="mut">&mdash;</span>';
   var cls=s.ctxPct>=85?'badge-red':(s.ctxPct>=70?'badge-amber':'badge-mut');
-  var title=s.ctxUsed.toLocaleString()+' / '+s.ctxWindow.toLocaleString()+' tokens used'+
-    (s.ctxPct>=70?' \\u2014 large single emissions may not fit; start a fresh session for big generations':'');
-  return '<span class="badge '+cls+'" title="'+title+'">'+s.ctxPct+'%</span>';
+  // NB: this whole UI script lives inside a template literal, which eats one
+  // level of backslash — an escaped apostrophe here silently ends the string
+  // and breaks the page. Use double quotes, never \\' in this file.
+  var title=s.ctxPct>=70?"large single emissions may not fit; start a fresh session for big generations":"context used of this session's window";
+  // Numbers stay VISIBLE, not hidden behind a hover: the token counts are the
+  // point, the percentage is just the fast read.
+  return '<span class="badge '+cls+'" title="'+title+'">'+s.ctxPct+'%</span>'+
+    '<div class="mut mono" style="font-size:.76rem;margin-top:3px">'+
+      s.ctxUsed.toLocaleString()+' / '+s.ctxWindow.toLocaleString()+
+    '</div>'+
+    '<div class="mut" style="font-size:.72rem">'+(s.ctxWindow-s.ctxUsed).toLocaleString()+' left</div>';
 }
 async function loadSessions(){
   try{
@@ -2041,6 +2223,9 @@ setInterval(function(){
   if(currentTab==='sessions') loadSessions();
   if(currentTab==='plugins') loadPlugins();
 },5000);
+// Vitals redraw on the sampling cadence, not the 5 s poll: the history only
+// gains a point every 60 s, so anything faster is a repaint of the same data.
+setInterval(function(){ if(currentTab==='overview') loadVitals(); },60000);
 </script></body></html>`;
 
 // ─────────────────────────── HTTP server ───────────────────────────
@@ -2106,6 +2291,13 @@ const server = http.createServer(async (req, res) => {
       const { entities, relations, relationCount } = parseMemoryFile();
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ entities, relations, relationCount, tripwire: MEMORY_ENTITY_TRIPWIRE }));
+      return;
+    }
+    if (req.method === 'GET' && url.pathname === '/api/history') {
+      const hours = Math.min(Math.max(Number(url.searchParams.get('hours')) || 6, 1), 336);
+      const rows = readHistoryRange(Date.now() - hours * 3600000);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ hours, rows }));
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/logtail') {
