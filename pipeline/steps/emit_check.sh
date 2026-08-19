@@ -10,6 +10,11 @@ const fs = require("fs"), path = require("path"), cp = require("child_process");
 const run = process.argv[1];
 const state = JSON.parse(fs.readFileSync(run + "/emit-state.json", "utf8"));
 const cur = state.current;
+if (!cur) {
+  const msg = "FAIL: no active chunk assignment (state desync - emission arrived with all chunks already done). This is an orchestration bug, not an emitter error.";
+  fs.writeFileSync(run + "/emit-check.txt", msg);
+  console.error(msg); process.exit(1);
+}
 let out = fs.readFileSync(run + "/emit_chunk.out", "utf8");
 out = out.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 const fence = out.match(/^```[a-z]*\s*([\s\S]*?)```\s*(<<CHUNK-COMPLETE>>)?\s*$/);
@@ -35,8 +40,7 @@ if (/\.(mjs|js|cjs)$/.test(cur.file) && state.done + 1 === state.total) {
 }
 state.done += 1;
 if (state.done < state.total) {
-  const plan = JSON.parse(fs.readFileSync(run + "/emit-plan.json", "utf8"));
-  const next = plan.chunks[state.done];
+  const next = state.chunks[state.done];
   const nt = path.join(run, "artifacts", next.file);
   let tail = "";
   if (fs.existsSync(nt)) tail = fs.readFileSync(nt, "utf8").split("\n").slice(-60).join("\n");
@@ -45,7 +49,8 @@ if (state.done < state.total) {
   state.current = null;
 }
 fs.writeFileSync(run + "/emit-state.json", JSON.stringify(state, null, 2));
-const ok = "OK chunk " + cur.index + " -> " + cur.file + " (" + cur.mode + ", " + content.length + " chars); done " + state.done + "/" + state.total;
-fs.writeFileSync(run + "/emit-check.txt", ok);
-console.log(ok);
+fs.writeFileSync(run + "/emit-check.txt", "OK chunk " + cur.index + " -> " + cur.file + " (" + cur.mode + ", " + content.length + " chars); done " + state.done + "/" + state.total);
+// Contract: stdout becomes the pass-edge payload (emit-state.json) - print
+// exactly the state and nothing else.
+console.log(JSON.stringify(state, null, 2));
 ' "$RUN"

@@ -18,12 +18,14 @@ the last lines already written to your target file - your output must
 continue seamlessly from it (do not repeat it, do not re-open structures it
 already opened).
 
-## Previous attempt failed
+## Feedback channel
 
 {{feedback}}
 
-If the section above is empty this is your first attempt. If it has content,
-it says exactly what was wrong - fix that; do not redesign the chunk.
+If the section above is empty, this is your first attempt. If it starts with
+"NOT A FAILURE - routing", it is only your assignment pointer - proceed
+normally. Anything else describes exactly what was wrong with a previous
+attempt - fix that; do not redesign the chunk.
 
 ## What to produce
 

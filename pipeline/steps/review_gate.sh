@@ -32,7 +32,8 @@ if (errs.length) {
   console.error(errs.join("\n")); process.exit(1);
 }
 fs.writeFileSync(run + "/review.json", JSON.stringify(rev, null, 2));
-const ok = "OK: verdict=" + rev.verdict + ", findings=" + rev.findings.length;
-fs.writeFileSync(run + "/review-gate.txt", ok);
-console.log(ok);
+fs.writeFileSync(run + "/review-gate.txt", "OK: verdict=" + rev.verdict + ", findings=" + rev.findings.length);
+// Contract: stdout becomes the pass-edge payload (review.json) - print
+// exactly the cleaned review and nothing else.
+console.log(JSON.stringify(rev, null, 2));
 ' "$RUN"

@@ -16,12 +16,25 @@ your chunk descriptions are the ONLY design contract the emitter gets.
 
 The `cap` field is the hard ceiling on any single chunk's `est_tokens`.
 
+## Reviewer findings on an existing artifact (empty on a fresh task)
+
+{{rework.json}}
+
+If the section above is non-empty, an artifact already exists and a clean-room
+reviewer found those defects: produce a REPAIR plan whose chunks recreate each
+affected file completely (starting "mode": "create") with every finding fixed
+and everything else preserved.
+
 ## Previous attempt failed
 
 {{feedback}}
 
-If the section above is empty this is your first attempt. If it has content,
-fix exactly what it describes.
+If the section above is empty this is your first attempt. If it contains
+plan-validation errors, fix exactly what it describes. If it contains
+REVIEWER FINDINGS about an already-generated artifact, produce a REPAIR
+plan instead: chunks that recreate each affected file completely (starting
+with "mode": "create", which replaces the old file) with every finding
+fixed - the rest of the brief's requirements unchanged.
 
 ## What to produce
 

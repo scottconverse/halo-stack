@@ -38,10 +38,11 @@ if (errs.length) {
   console.error(errs.join("\n")); process.exit(1);
 }
 fs.writeFileSync(run + "/emit-plan.json", JSON.stringify(plan, null, 2));
-const state = { total: plan.chunks.length, done: 0,
+const state = { chunks: plan.chunks, total: plan.chunks.length, done: 0,
   current: Object.assign({ index: 0, file_tail: "" }, plan.chunks[0]) };
 fs.writeFileSync(run + "/emit-state.json", JSON.stringify(state, null, 2));
-const ok = "OK: " + plan.chunks.length + " chunks, all under cap " + room.cap;
-fs.writeFileSync(run + "/plan-check.txt", ok);
-console.log(ok);
+fs.writeFileSync(run + "/plan-check.txt", "OK: " + plan.chunks.length + " chunks, all under cap " + room.cap);
+// Contract: the driver writes this stdout over the pass-edge payload
+// (emit-plan.json), so stdout must BE the cleaned plan and nothing else.
+console.log(JSON.stringify(plan, null, 2));
 ' "$RUN"
