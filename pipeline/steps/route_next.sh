@@ -9,6 +9,8 @@ const run = process.argv[1];
 const state = JSON.parse(fs.readFileSync(run + "/emit-state.json", "utf8"));
 if (state.done >= state.total) { console.log("all " + state.total + " chunks emitted"); process.exit(0); }
 fs.writeFileSync(run + "/next-chunk.json", JSON.stringify(state.current, null, 2));
-console.log("next: chunk " + state.current.index + " of " + state.total + " -> " + state.current.file);
+// This fail edge is a ROUTE, not a failure - the loop carries this text as
+// "feedback" to the emitter, so say so explicitly.
+console.log("NOT A FAILURE - routing: proceed to your assigned chunk " + state.current.index + " of " + state.total + " (" + state.current.file + ") exactly as specified in emit-state.current.");
 process.exit(1);
 ' "$RUN"

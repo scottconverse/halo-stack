@@ -84,9 +84,9 @@ NODES = {   'measure_room': {   'id': 'measure_room',
                                  "this stack). Chunks are written with the harness's "
                                  'incremental file tools (create / insert / '
                                  'str_replace), never as one giant tool-call argument.',
-                       'reads': ['task-brief.md', 'room.json'],
+                       'reads': ['task-brief.md', 'room.json', 'rework.json'],
                        'writes': ['emit-plan.json'],
-                       'max_attempts': 2,
+                       'max_attempts': 6,
                        'on_exhausted': 'human'},
     'plan_check': {   'id': 'plan_check',
                       'label': 'Validate plan deterministically',
@@ -110,10 +110,16 @@ NODES = {   'measure_room': {   'id': 'measure_room',
                                 'create/insert/str_replace so no single tool-call '
                                 'argument exceeds the chunk cap. On rework, the '
                                 'incoming report says exactly what failed - fix that, '
-                                'do not regenerate the artifact.',
+                                'do not regenerate the artifact. max_attempts is high '
+                                'ON PURPOSE: the driver counts every fail-edge '
+                                "re-entry, and route_next's next-chunk routing arrives "
+                                'on a fail edge, so this ceiling bounds chunks+rework, '
+                                'not genuine retries - those are bounded by '
+                                'refresh_context (3), and the run-level agent_calls '
+                                'budget is the global stop.',
                       'reads': ['emit-plan.json', 'emit-state.json', 'worktree'],
                       'writes': ['worktree', 'emit-state.json'],
-                      'max_attempts': 3,
+                      'max_attempts': 30,
                       'on_exhausted': 'human'},
     'emit_check': {   'id': 'emit_check',
                       'label': 'Truncation + syntax gate',
@@ -187,8 +193,7 @@ NODES = {   'measure_room': {   'id': 'measure_room',
                             'can fill.',
                   'reads': ['task-brief.md', 'review-input.md'],
                   'writes': ['review.json'],
-                  'evidence': 'review.json',
-                  'max_attempts': 2,
+                  'max_attempts': 8,
                   'on_exhausted': 'human'},
     'review_gate': {   'id': 'review_gate',
                        'label': 'Validate the review itself',
@@ -207,7 +212,10 @@ NODES = {   'measure_room': {   'id': 'measure_room',
                          'kind': 'code',
                          'detail': 'Router: exit 0 (pass) when review.json has zero '
                                    'findings; exit 1 (fail) otherwise, forwarding the '
-                                   'findings as the rework payload.',
+                                   'findings to the PLANNER - rework is a replan (a '
+                                   'fresh repair plan whose chunks recreate the '
+                                   'affected files with fixes), never a blind re-emit '
+                                   'against a spent chunk list.',
                          'reads': ['review.json'],
                          'writes': ['rework.json'],
                          'max_attempts': 1,
@@ -301,7 +309,7 @@ EDGES = [   {   'from': 'measure_room',
         'when': 'pass',
         'payload': 'review.json'},
     {   'from': 'verdict_route',
-        'to': 'emit_chunk',
+        'to': 'plan_chunks',
         'when': 'fail',
         'payload': 'rework.json',
         'loop': True},

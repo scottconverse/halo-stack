@@ -1,14 +1,14 @@
 flowchart TD
     measure_room["Measure context room via harness API<br/>max 2 attempts<br/>proves: room.json"]
     fresh_session_start["No usable session: start fresh headless<br/>max 2 attempts"]
-    plan_chunks("Split the artifact into room-sized chunks<br/>qwen/qwen3.8-27b<br/>max 2 attempts")
+    plan_chunks("Split the artifact into room-sized chunks<br/>qwen/qwen3.8-27b<br/>max 6 attempts")
     plan_check["Validate plan deterministically<br/>proves: plan-check.txt"]
-    emit_chunk("Emit ONE chunk via incremental file tools<br/>qwen/qwen3.8-27b<br/>max 3 attempts")
+    emit_chunk("Emit ONE chunk via incremental file tools<br/>qwen/qwen3.8-27b<br/>max 30 attempts")
     emit_check["Truncation + syntax gate<br/>proves: emit-check.txt"]
     refresh_context["Retry ALWAYS lands in fresh context<br/>max 3 attempts"]
     route_next["More chunks?"]
     integrate["Assemble + full verification<br/>proves: integrate-report.txt"]
-    review("Clean-room review of the diff<br/>qwen/qwen3.8-27b<br/>max 2 attempts<br/>proves: review.json")
+    review("Clean-room review of the diff<br/>qwen/qwen3.8-27b<br/>max 8 attempts")
     review_gate["Validate the review itself<br/>proves: review-gate.txt"]
     verdict_route["Findings?"]
     open_pr["Push branch, open PR<br/>max 2 attempts"]
@@ -33,7 +33,7 @@ flowchart TD
     review_gate -- "pass: review.json" --> verdict_route
     review_gate -. "fail: review-gate.txt" .-> review
     verdict_route -- "pass: review.json" --> open_pr
-    verdict_route -. "fail: rework.json" .-> emit_chunk
+    verdict_route -. "fail: rework.json" .-> plan_chunks
     open_pr -- "pr_url" --> accept
 
     classDef code fill:#dbeafe,stroke:#1d4ed8,stroke-width:1px,color:#0b2a6b;

@@ -36,6 +36,10 @@ for (const f of files) {
 if (review.length > 90000) review = review.slice(0, 90000) + "\n[... truncated for reviewer prompt budget - flag if the visible portion already has findings ...]";
 fs.writeFileSync(run + "/review-input.md", review.trim() + "\n");
 fs.writeFileSync(run + "/integrate-report.txt", report.join("\n"));
-console.log(report.join("\n"));
-process.exit(failed ? 1 : 0);
+// Contract: stdout becomes the traversed edge payload. Pass edge carries
+// review-input.md (the artifact for the stateless reviewer); fail edge
+// carries integrate-report.txt. Print accordingly.
+if (failed) { console.log(report.join("\n")); process.exit(1); }
+console.log(review.trim());
+process.exit(0);
 ' "$RUN"
