@@ -85,6 +85,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
   <div class="stat"><b>65,536</b><span>token context, with proven continuity across forced compaction and an OS reboot</span></div>
   <div class="stat"><b>$0</b><span>marginal cost per token for all daily coding — the models live on the machine</span></div>
   <div class="stat"><b>12 hours</b><span>of research, cross-model reviews, coding, breakages, and fixes — pushed to finished by an operator who wouldn't defer the last mile</span></div>
+  <div class="stat"><b>2 machines</b><span>the same repo's deploy pipeline installed the full stack on an RTX&nbsp;5070&nbsp;Ti box — harness coding task 73&nbsp;s there vs 176&nbsp;s on HALO, three measurement passes replicated</span></div>
 </div>
 
 <section id="how">
@@ -187,6 +188,8 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
   </ul>
   <h2 style="margin-top:48px">Telemetry: audited, not assumed</h2>
   <p class="lede">Because "runs locally" should be a verified claim, all 199 installed DeepSeek packages were swept — code <em>and</em> config — the telemetry subsystem read at source, and the live processes' sockets inspected. Findings: the Qwen models are inert weights executed by LM Studio (no Qwen code runs at all); the harness ships exactly one telemetry exporter, <strong>default DISABLED</strong>, and the disabled path constructs no telemetry SDK whatsoever — there is nothing in memory capable of sending. No third-party analytics of any kind. The running processes hold exactly one connection: localhost LM Studio. The stack's weekly self-audit skill re-checks telemetry defaults on every upstream release before any upgrade. Full evidence ships in the repository (<code>docs/AUDIT-telemetry-2026-08-17.md</code>).</p>
+  <h2 style="margin-top:48px">Ported, and measured again</h2>
+  <p class="lede">The stack is no longer single-machine by construction: its own <code>Deploy-ToLive</code> pipeline installed it end-to-end on a second, very different box (RTX&nbsp;5070&nbsp;Ti 16GB, CUDA engine) — launchers, plugins, Mission Control, all serving. The port forced real engineering: engine tuning proved per-engine in both directions (speculative decoding ON for HALO's Vulkan, OFF for CUDA; KV cache quantization worthless on Vulkan, a 2.4× unlock on 16&nbsp;GB CUDA), fleet-linked boxes need device-suffixed model identities so a deploy can't silently run on the wrong machine's compute, and the port surfaced — and fixed — two Mission Control defects, including an Unload button that could have killed a remote box's running model. The full record, including everything the small card <em>cannot</em> do, ships in <code>docs/ports/tester-5070ti-bench-2026-08-18.md</code>.</p>
   <p class="lede" style="margin-top:26px">Deliberately not included, for now: the Hermes operations plane (cold-session cron and phone messaging — parked until the need justifies a second always-on gateway), self-hosted SearXNG search (evaluated; keyed Exa chosen for zero moving parts, with the sovereign path documented), and any custom plugins (nothing shipped has failed yet).</p>
 </section>
 

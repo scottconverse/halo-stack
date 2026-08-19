@@ -656,6 +656,84 @@ Full bug list with root causes: README §Known issues and `docs/phases/phase3-re
   the two GGUFs, run `scripts\Deploy-ToLive.ps1`, recreate the two desktop shortcuts,
   install per-profile subagent plugins (deploy script prints the command).
 
+## Porting the stack to other hardware — PROVEN
+
+The full stack installed and runs on a second machine: an RTX 5070 Ti 16GB
+(Blackwell/CUDA) box, 2026-08-18. Not a sandbox — the repo's own
+`Deploy-ToLive.ps1` ran clean end-to-end three times, and the live install
+(loaders, launcher, desktop icons, subagent plugins for both profiles,
+Mission Control at :3090) is serving there. Warm launcher-to-cockpit: 20 s.
+The installed config runs the standard harness coding task in **73 s vs
+HALO's 176 s**, with 1,668 tok/s prefill (9.2× HALO), 0.33 s cached TTFT,
+and 42 tok/s decode at 30K depth. Full port record, all three measurement
+passes, and the complete adaptation list:
+[`docs/ports/tester-5070ti-bench-2026-08-18.md`](ports/tester-5070ti-bench-2026-08-18.md).
+
+**What transfers as-is:** the harness pin, deploy/backup/rollback pipeline,
+Mission Control, flash attention, `parallel: 1`, contextCheckpoints, the
+documented Windows workarounds (nothing new surfaced).
+
+**What every port must adapt** (measured, not theoretical):
+- **Engine tuning is per-engine:** MTP off + KV q8_0 on CUDA/16 GB
+  (q8_0 *doubles* deep decode there); MTP n=4 + KV f16 on HALO's Vulkan —
+  both directions measured, neither default transfers.
+- **Weights sized to VRAM:** the 21 GB Q5 brain and two-model residency are
+  physically impossible in 16 GB; the port runs UD-Q3_K_XL all-GPU.
+- **Fleet identity:** on an LM Link-linked box the stock identity resolves to
+  the *remote HALO device* — an unadapted deploy silently runs the cockpit on
+  HALO's compute. Every port pins a device-suffixed local identity
+  (`qwen/qwen3.8-27b-5070ti`) and the brain-presence check must filter
+  `deviceIdentifier -eq null` (see Fleet below).
+
+**Port-discovered bugs, fixed or documented:** Mission Control's carveout
+math hardcoded 128 GiB (fixed — VRAM capacity now read from the driver
+registry, portable); the Models tab offered live Unload buttons on *remote*
+fleet models (fixed — UI hides controls and the endpoint refuses server-side);
+clean-machine deploy-order bug (run `npx @deepseek-ai/dsh@0.1.0-rc.7 web
+--dump-config` once before first deploy — the YAML validator borrows js-yaml
+from the dsh profile install); eviction JIT-reloads the brain with server
+defaults, not the loader profile (measured 17.5 vs 49 tok/s — re-run the
+loader after any eviction). NVIDIA silent killers: driver memory-clock
+parking (`nvidia-smi --query-gpu=clocks.mem,pstate` under load) and the
+server's default 4 parallel slots. Stack policy adopted from the port's
+download corruption incident: sha256-gate every model file against the HF
+API (`?blobs=true` lfs.oid) before it is benched or shipped.
+
+## Fleet: LM Link (multi-device model pooling)
+
+This machine has LM Studio's **LM Link** enabled (account-level, up to 5
+devices; enrolled 2026-08-13). Linked machines form **one model pool**:
+any device can list, load, and run models that live on another device —
+the load executes where the weights live, and only prompts/tokens cross
+the LAN. HALO's HTTP server stays bound to 127.0.0.1; LM Link traffic
+rides its own device channel. Discovered the hard way (a foreign load
+contaminated a bench — see the contention incident in
+`docs/phases/bench-day-3-results.md`), kept deliberately for what it
+enables.
+
+**What it's for here:**
+- **Right-box routing:** dispatch speed-critical work to the CUDA box's
+  fast small model; borrow HALO's big-memory models from boxes that can't
+  hold them. Model-level fleet distribution with zero clustering
+  infrastructure.
+- **Clean-room cross-model audits:** fire an audit prompt at a *different
+  model family on a different machine* with zero shared history —
+  independent eyes on demand.
+- One catalog across the fleet.
+
+**The discipline (non-negotiable, learned live):**
+1. **Identity convention:** HALO's canonical identities stay unsuffixed
+   (`qwen/qwen3.8-27b`, …). Every OTHER device suffixes its identities
+   with its device name (live example: `qwen/qwen3.8-27b-5070ti`).
+   Nothing may ever resolve somewhere surprising.
+2. **No benches while the pool is shared.** Bench sessions must verify no
+   foreign-origin model is resident/generating before starting, and abort
+   a cell if one appears mid-run (retain contaminated rows, marked).
+   For controlled windows, pause LM Link in LM Studio's settings.
+3. **Mission Control labels origin** on every resident model (local /
+   device / FLEET-unknown) and alarms on live cross-origin contention —
+   a remote load must never be a mystery again.
+
 ## Instruction file
 
 Every cockpit session automatically loads `C:\Users\scott\Desktop\Code\AGENTS.md`

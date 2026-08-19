@@ -29,14 +29,31 @@ const STATE_FILE = path.join(MC_DIR, 'mc-state.json');
 const HISTORY_FILE = path.join(MC_DIR, 'mc-history.jsonl');
 const LMSTUDIO_LOGS = path.join(HOME, '.lmstudio', 'server-logs');
 const LMSTUDIO_VERSION_FILE = path.join(HOME, '.lmstudio', '.internal', 'historical-version-info.json');
+const LM_LINK_ACCOUNT_CACHE = path.join(HOME, '.lmstudio', '.internal', 'lm-link-account-status-cache.json');
 const LOADER_Q5 = path.join(HOME, '.lmstudio', 'scripts', 'Load-OpenCode-Qwen.mjs');
 const LOADER_WORKER = path.join(HOME, '.lmstudio', 'scripts', 'Load-Worker-Coder.mjs');
 const START_DSH = path.join(HOME, '.dsh', 'Start-DSH.ps1');
 const DSH_VERSION_PIN = '0.1.0-rc.7';
-// Machine has 128 GiB unified physical RAM (Strix Halo APU). Windows only sees
-// its own pool via os.totalmem(); the rest is the GPU carveout. Compute the
-// split at runtime — do NOT hardcode a fixed 64/64 number, it drifts.
-const MACHINE_TOTAL_RAM = 128 * 1024 * 1024 * 1024;
+// GPU carveout sizing must work on ANY box this deploys to (the 5070 Ti port
+// exposed a hardcoded-128-GiB defect: "14.9 / 96.4 GiB carveout" on a 16 GiB
+// discrete card). Primary source: the display driver's own VRAM capacity from
+// the registry (qwMemorySize — reports the VGM carveout on the Strix Halo APU
+// and true VRAM on discrete cards). Fallback for APUs where that key is
+// absent: unified-total minus what Windows sees. Neither → carveout unknown,
+// and the UI says so instead of inventing a number.
+const MACHINE_TOTAL_RAM = 128 * 1024 * 1024 * 1024; // HALO fallback hint only
+const vramCap = { at: 0, bytes: null };
+async function vramCapacityBytes() {
+  if (vramCap.at) return vramCap.bytes;
+  try {
+    const cmd = "Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\0*' -Name 'HardwareInformation.qwMemorySize' -ErrorAction SilentlyContinue | ForEach-Object { $_.'HardwareInformation.qwMemorySize' }";
+    const { stdout } = await execFileP('powershell.exe', ['-NoProfile', '-Command', cmd], { timeout: 8000 });
+    const vals = stdout.split('\n').map(s => parseInt(s.trim(), 10)).filter(v => Number.isFinite(v) && v >= 1073741824);
+    vramCap.bytes = vals.length ? Math.max(...vals) : null;
+  } catch { vramCap.bytes = null; }
+  vramCap.at = Date.now();
+  return vramCap.bytes;
+}
 const MEMORY_ENTITY_TRIPWIRE = 50;
 
 function tcpCheck(port, timeout = 1500) {
@@ -119,6 +136,106 @@ function lmStudioAppVersion() {
     const v = (Array.isArray(hist) && hist.length ? hist[hist.length - 1].lastRecordedAppVersion : null) || data.lastRecorderdAppVersion || null;
     return v ? `${v} (last recorded)` : null;
   } catch { return null; }
+}
+
+// ─────────────────────────── LM Link fleet awareness ───────────────────────────
+// LM Link (multi-device pooling) lets OTHER machines on the account load and
+// run models ON this box's LM Studio, and vice versa. Both `lms ps --json`
+// and `lms ls --json` entries carry a real `deviceIdentifier` field —
+// verified live on this box 2026-08-18:
+//   - null            -> the model is physically running on THIS device
+//                        (the one `lms` is querying)
+//   - a hex hash       -> the model is physically running on that OTHER
+//                        device, merged into view here by LM Link pooling
+// `lms link status --json` is the only place that hash resolves to a human
+// device name (e.g. this box's own hash -> "Halo"; a peer's hash ->
+// "NvideaBlackwell"). A `-5070ti`-style suffix on an `identifier` is
+// whatever the loader chose to call it — a hint at best, never proof; the
+// deviceIdentifier field is the authoritative signal and is always preferred.
+//
+// Critically, a foreign LM Link caller can command THIS box to load a model
+// for them — that instance then shows deviceIdentifier:null too, physically
+// indistinguishable from a real local load (this is exactly how yesterday's
+// bench got contaminated with nothing labeling it). The only thing that
+// tells the two apart is whether the identifier/modelKey matches one of
+// this box's own known loader scripts — hence the allowlist below.
+const KNOWN_LOCAL_IDENTIFIERS = new Set([
+  'qwen/qwen3.8-27b',
+  'qwen3-coder-30b-a3b-instruct',
+  'qwen3.8-27b-uncensored@q6_k',
+  'qwen3.8-27b-uncensored@f16',
+]);
+function isKnownLocalIdentity(identifier, modelKey) {
+  for (const s of [identifier, modelKey]) {
+    if (!s) continue;
+    if (KNOWN_LOCAL_IDENTIFIERS.has(s) || s.startsWith('bench/')) return true;
+  }
+  return false;
+}
+
+async function lmsLinkStatus() {
+  try {
+    const { stdout } = await execFileP('lms', ['link', 'status', '--json'], { shell: true, timeout: 8000 });
+    return JSON.parse(stdout || '{}');
+  } catch { return null; }
+}
+
+// Cached ~10s alongside the other lms CLI shell-outs (gpuMemory/diskUsage
+// follow the same pattern) — status() and catalog() both need it every poll.
+const linkCache = { at: 0, status: null };
+async function getLinkStatus() {
+  if (Date.now() - linkCache.at < 10000 && linkCache.at) return linkCache.status;
+  linkCache.status = await lmsLinkStatus();
+  linkCache.at = Date.now();
+  return linkCache.status;
+}
+
+// deviceIdentifier hash -> { name, isSelf, status } for every device we can
+// actually name: this box itself, plus every connected LM Link peer.
+function buildDeviceMap(linkStatus) {
+  const map = new Map();
+  if (!linkStatus) return map;
+  if (linkStatus.deviceIdentifier) map.set(linkStatus.deviceIdentifier, { name: linkStatus.deviceName || 'this device', isSelf: true, status: 'self' });
+  for (const p of (linkStatus.peers || [])) {
+    if (p.deviceIdentifier) map.set(p.deviceIdentifier, { name: p.deviceName || p.deviceIdentifier, isSelf: false, status: p.status || null });
+  }
+  return map;
+}
+
+// Resolves the origin of one loaded model instance to exactly one bucket:
+//   kind 'local'   — identifier/modelKey is on the known-loader-script
+//                     allowlist. Rendered plainly, no alarm.
+//   kind 'device'  — deviceIdentifier resolves to a named device via `lms
+//                     link status` (self or a connected peer). A real,
+//                     identified fleet load — not a mystery, informational only.
+//   kind 'unknown' — deviceIdentifier present but unresolved, OR
+//                     deviceIdentifier null under an identifier we don't
+//                     recognize as our own. This is the amber case: a load
+//                     with no honest explanation.
+function resolveOrigin(identifier, modelKey, deviceIdentifier, deviceMap) {
+  if (isKnownLocalIdentity(identifier, modelKey)) return { kind: 'local', label: 'local', deviceId: deviceIdentifier || null };
+  if (deviceIdentifier) {
+    const dev = deviceMap.get(deviceIdentifier);
+    if (dev) return { kind: 'device', label: dev.name, deviceId: deviceIdentifier, isSelf: !!dev.isSelf };
+    return { kind: 'unknown', label: 'FLEET/unknown-origin', deviceId: deviceIdentifier };
+  }
+  return { kind: 'unknown', label: 'FLEET/unknown-origin', deviceId: null };
+}
+
+// LM Link account entitlement cache — a small file LM Studio itself
+// maintains, not something we query live. Honest-degraded (ok:false) if
+// missing/unreadable rather than inventing zeros.
+function readLmLinkAccountCache() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(LM_LINK_ACCOUNT_CACHE, 'utf8'));
+    const j = raw.json || raw; // observed on-disk shape: {"json": {...}}
+    return {
+      ok: true,
+      accountStatus: j.accountStatus ?? null,
+      maxDevicesAllowed: j.maxDevicesAllowed ?? null,
+      currentDeviceCount: j.currentDeviceCount ?? null,
+    };
+  } catch { return { ok: false, accountStatus: null, maxDevicesAllowed: null, currentDeviceCount: null }; }
 }
 
 // ─────────────────────────── dsh cockpit RPC ───────────────────────────
@@ -541,12 +658,14 @@ function readHistorySpark(n = 40) {
 // ─────────────────────────── model catalog ───────────────────────────
 
 async function catalog() {
-  const [lsAll, psAll] = await Promise.all([lmsLs(), lmsPs()]);
+  const [lsAll, psAll, linkStatus] = await Promise.all([lmsLs(), lmsPs(), getLinkStatus()]);
   if (lsAll === null) return { error: true, catalog: [], totalGB: 0 };
+  const deviceMap = buildDeviceMap(linkStatus);
   const loadedByKey = new Map((psAll || []).map(m => [m.modelKey, m]));
   const loadedByPath = new Map((psAll || []).map(m => [m.path, m]));
   const rows = lsAll.map(m => {
     const loaded = loadedByKey.get(m.modelKey) || loadedByPath.get(m.path) || null;
+    const origin = loaded ? resolveOrigin(loaded.identifier, m.modelKey, loaded.deviceIdentifier, deviceMap) : null;
     return {
       modelKey: m.modelKey,
       displayName: m.displayName,
@@ -565,6 +684,8 @@ async function catalog() {
       lastUsedTime: loaded?.lastUsedTime ?? null,
       queued: loaded?.queued ?? null,
       parallel: loaded?.parallel ?? null,
+      origin: origin ? origin.label : null,
+      originKind: origin ? origin.kind : null,
     };
   });
   // Any loaded model somehow missing from `ls` (shouldn't normally happen, but
@@ -572,12 +693,14 @@ async function catalog() {
   const seenKeys = new Set(rows.map(r => r.modelKey));
   for (const m of (psAll || [])) {
     if (seenKeys.has(m.modelKey)) continue;
+    const origin = resolveOrigin(m.identifier, m.modelKey, m.deviceIdentifier, deviceMap);
     rows.push({
       modelKey: m.modelKey, displayName: m.displayName, publisher: m.publisher, path: m.path,
       architecture: m.architecture, paramsString: m.paramsString, quant: m.quantization?.name || '?',
       sizeGB: gb(m.sizeBytes), maxContextLength: m.maxContextLength || null, loaded: true,
       identifier: m.identifier, status: m.status, contextLength: m.contextLength, ttlMs: m.ttlMs,
       lastUsedTime: m.lastUsedTime, queued: m.queued, parallel: m.parallel, loadedOnly: true,
+      origin: origin.label, originKind: origin.kind,
     });
   }
   rows.sort((a, b) => (b.loaded - a.loaded) || a.displayName.localeCompare(b.displayName));
@@ -588,14 +711,31 @@ async function catalog() {
 // ─────────────────────────── status() — the 5 s poll ───────────────────────────
 
 async function status() {
-  const [dshUp, lmUp, models, runtime, lmsVer, gpu, disk] = await Promise.all([
-    tcpCheck(3080), tcpCheck(1234), lmsPs(), lmsRuntimeLs(), lmsVersionStr(), gpuMemory(), diskUsage(),
+  const [dshUp, lmUp, models, runtime, lmsVer, gpu, disk, linkStatus] = await Promise.all([
+    tcpCheck(3080), tcpCheck(1234), lmsPs(), lmsRuntimeLs(), lmsVersionStr(), gpuMemory(), diskUsage(), getLinkStatus(),
   ]);
   const sc = await getSessions(dshUp, 50);
   const slow = dshUp ? await slowPulls() : slowCache;
   const mem = parseMemoryFile();
   const due = monitorDue(mem.entities);
   const today = todayStats(sc.sessions || []);
+  const deviceMap = buildDeviceMap(linkStatus);
+  const modelsWithOrigin = (models || []).map(m => {
+    const origin = resolveOrigin(m.identifier, m.modelKey, m.deviceIdentifier, deviceMap);
+    return {
+      identifier: m.identifier,
+      modelKey: m.modelKey,
+      quant: m.quantization?.name || '?',
+      context: m.contextLength,
+      status: m.status,
+      queued: m.queued,
+      gb: gb(m.sizeBytes),
+      origin: origin.label,
+      originKind: origin.kind,
+    };
+  });
+  const unknownOrigin = modelsWithOrigin.filter(m => m.originKind === 'unknown');
+  const accountCache = readLmLinkAccountCache();
 
   const engineStr = runtime?.selected ? `${runtime.selected.name}@${runtime.selected.version}` : null;
   const state = readState();
@@ -606,7 +746,10 @@ async function status() {
   }
 
   const winTotal = os.totalmem(), winFree = os.freemem();
-  const carveoutBytes = Math.max(0, MACHINE_TOTAL_RAM - winTotal);
+  const capBytes = await vramCapacityBytes();
+  const apuDiff = MACHINE_TOTAL_RAM - winTotal;
+  const carveoutBytes = capBytes != null ? capBytes
+    : (apuDiff >= 8 * 1073741824 ? apuDiff : null);
 
   return {
     time: new Date().toISOString(),
@@ -621,15 +764,19 @@ async function status() {
       engine: engineStr,
       engineChanged,
     },
-    models: (models || []).map(m => ({
-      identifier: m.identifier,
-      modelKey: m.modelKey,
-      quant: m.quantization?.name || '?',
-      context: m.contextLength,
-      status: m.status,
-      queued: m.queued,
-      gb: gb(m.sizeBytes),
-    })),
+    models: modelsWithOrigin,
+    fleet: {
+      linkOk: !!linkStatus,
+      deviceName: linkStatus?.deviceName || null,
+      deviceId: linkStatus?.deviceIdentifier || null,
+      peers: (linkStatus?.peers || []).map(p => ({
+        deviceName: p.deviceName, deviceIdentifier: p.deviceIdentifier, status: p.status, loadedModels: p.loadedModels || [],
+      })),
+      accountCache,
+      pool: modelsWithOrigin,
+      unknownOriginResident: unknownOrigin.map(m => m.identifier),
+      unknownOriginGenerating: unknownOrigin.filter(m => m.status === 'generating').map(m => m.identifier),
+    },
     sessions: (sc.sessions || []).slice(0, 8),
     sessionsSource: sc.source,
     today,
@@ -648,7 +795,7 @@ async function status() {
     // RAM/GPU pools in GiB (binary) — matches AMD Adrenalin's VGM split units.
     // Disk stays decimal GB below — drives are marketed in decimal.
     ram: { totalGiB: gib(winTotal), freeGiB: gib(winFree), usedGiB: gib(winTotal - winFree) },
-    gpu: { ok: gpu.ok, dedicatedGiB: gib(gpu.dedicatedBytes), sharedGiB: gib(gpu.sharedBytes), carveoutGiB: gib(carveoutBytes) },
+    gpu: { ok: gpu.ok, dedicatedGiB: gib(gpu.dedicatedBytes), sharedGiB: gib(gpu.sharedBytes), carveoutGiB: carveoutBytes != null ? gib(carveoutBytes) : null },
     disk: { ok: disk.ok, usedGB: gb(diskCache.usedBytes), freeGB: gb(diskCache.freeBytes), totalGB: gb(diskCache.usedBytes + diskCache.freeBytes) },
     machineTotalRamGiB: Math.round(MACHINE_TOTAL_RAM / 1073741824),
     validation: state.lastValidation || null,
@@ -703,6 +850,7 @@ input[type=text],input[type=number]{background:#0c1620;border:1px solid var(--li
 .light-label{font-size:.78rem;color:var(--mut);letter-spacing:.03em}
 .alarm{flex:1 1 260px;font-size:.85rem;color:var(--mut);text-align:right}
 .alarm.bad{color:var(--amber)}
+.alarm.info{color:var(--teal)}
 /* tabs */
 .tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .tabbtn{background:none;border:none;color:var(--mut);padding:8px 14px;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin:0;border-radius:0}
@@ -768,6 +916,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 <div class="card"><h2>Cadence &amp; drift</h2><div id="ov-cadence"></div></div>
 <div class="card"><h2>Today</h2><div id="ov-today"></div></div>
 <div class="card"><h2>Throughput</h2><div id="ov-throughput"></div></div>
+<div class="card"><h2>Fleet (LM Link)</h2><div id="ov-fleet"></div></div>
 </div>
 </div>
 
@@ -932,10 +1081,18 @@ function computeLights(s){
     lights.HARNESS={level:'a',cause:'a preset is broken'};
   } else lights.HARNESS={level:'g',cause:null};
   // MODELS
+  var unknownResident=(s.fleet&&s.fleet.unknownOriginResident)||[];
+  var unknownGenerating=(s.fleet&&s.fleet.unknownOriginGenerating)||[];
+  var localGenerating=s.models.some(function(m){return m.originKind==='local'&&m.status==='generating'});
   if(!s.services.lmsCli) lights.MODELS={level:'r',cause:'lms CLI failed'};
   else if(s.models.length===0) lights.MODELS={level:'a',cause:'zero models loaded'};
   else if(s.models.some(function(m){return m.context>=200000})) lights.MODELS={level:'a',cause:'a loaded model has context \u2265 200K (silent-huge-context trap)'};
+  else if(unknownGenerating.length&&localGenerating) lights.MODELS={level:'a',cause:'fleet contention: unknown-origin model generating alongside a local model \u2014 '+unknownGenerating.join(', ')};
   else lights.MODELS={level:'g',cause:null};
+  // Informational-only: an unknown-origin model just being resident (loaded
+  // but not necessarily generating) is not itself an alarm \u2014 surface it in
+  // the alarm line so it's never a silent mystery, without tripping amber.
+  if(unknownResident.length) lights.MODELS.info='fleet load resident: '+unknownResident.join(', ');
   // MEMORY
   if(s.ram.freeGiB<3) lights.MEMORY={level:'r',cause:'Windows free RAM '+s.ram.freeGiB+' GiB < 3 GiB'};
   else if(s.gpu.sharedGiB>8) lights.MEMORY={level:'a',cause:'GPU shared usage '+s.gpu.sharedGiB+' GiB > 8 GiB (model bytes leaking into Windows pool)'};
@@ -954,18 +1111,21 @@ var lightTab={HARNESS:'overview',MODELS:'models',MEMORY:'system',DISK:'system',S
 function renderStrip(s){
   var lights=computeLights(s);
   var order=['HARNESS','MODELS','MEMORY','DISK','STREAM'];
-  var worst=null, cause=null;
+  var worst=null, cause=null, info=null;
   order.forEach(function(name){
     var lv=lights[name].level;
     if(lv==='r'&&worst!=='r'){worst='r';cause=name+': '+lights[name].cause}
     else if(lv==='a'&&worst==null){worst='a';cause=name+': '+lights[name].cause}
     else if(lv==='a'&&worst==='a'&&!cause){cause=name+': '+lights[name].cause}
+    if(lights[name].info&&!info) info=name+': '+lights[name].info;
   });
   var html=order.map(function(name){
     var l=lights[name];
     return '<span class="light-item" onclick="location.hash=\\'#'+lightTab[name]+'\\'"><span class="light '+l.level+'"></span><span class="light-label">'+name+'</span></span>';
   }).join('');
-  html+='<span class="alarm'+(worst?' bad':'')+'">'+(worst?esc(cause):'All systems nominal')+'</span>';
+  var alarmCls=worst?' bad':(info?' info':'');
+  var alarmTxt=worst?cause:(info?info:'All systems nominal');
+  html+='<span class="alarm'+alarmCls+'">'+esc(alarmTxt)+'</span>';
   document.getElementById('strip').innerHTML=html;
 }
 
@@ -995,13 +1155,14 @@ function renderOverview(s){
   document.getElementById('ov-active').innerHTML=activeHtml;
 
   var winPct=Math.min(100,Math.round(s.ram.usedGiB/s.ram.totalGiB*100));
-  var gpuPct=Math.min(100,Math.round(s.gpu.dedicatedGiB/s.gpu.carveoutGiB*100));
+  var haveCarve=s.gpu.carveoutGiB!=null;
+  var gpuPct=haveCarve?Math.min(100,Math.round(s.gpu.dedicatedGiB/s.gpu.carveoutGiB*100)):0;
   var sharedBad=s.gpu.sharedGiB>8;
   document.getElementById('ov-pools').innerHTML=
     '<div class="row"><span class="k">Windows pool</span><span>'+s.ram.usedGiB+' / '+s.ram.totalGiB+' GiB</span></div>'+
     '<div class="bar"><i style="width:'+winPct+'%"></i></div>'+
-    '<div class="row" style="margin-top:8px"><span class="k">GPU dedicated</span><span>'+s.gpu.dedicatedGiB+' / '+s.gpu.carveoutGiB+' GiB carveout</span></div>'+
-    '<div class="bar"><i style="width:'+gpuPct+'%"></i></div>'+
+    '<div class="row" style="margin-top:8px"><span class="k">GPU dedicated</span><span>'+s.gpu.dedicatedGiB+(haveCarve?' / '+s.gpu.carveoutGiB+' GiB carveout':' GiB (carveout unknown)')+'</span></div>'+
+    (haveCarve?'<div class="bar"><i style="width:'+gpuPct+'%"></i></div>':'')+
     '<div class="row" style="margin-top:8px"><span class="k">GPU shared</span><span'+(sharedBad?' style="color:var(--amber)"':'')+'>'+s.gpu.sharedGiB+' GiB</span></div>'+
     '<div class="mut" style="margin-top:2px">should stay near 0 &mdash; model bytes belong in the carveout</div>';
 
@@ -1025,6 +1186,29 @@ function renderOverview(s){
     '<div class="row"><span class="k">TTFT</span><span>'+(latest.ttftS!=null?latest.ttftS+'s':'&mdash;')+' <span class="mut">(prefill baseline 181 t/s)</span></span></div>'+
     spark
     : '<div class="mut">no session with stats yet</div>'+spark;
+
+  var fc=s.fleet||{};
+  var ac=fc.accountCache||{};
+  var fleetHtml='';
+  if(!ac.ok){
+    fleetHtml+='<div class="row"><span class="k">LM Link account</span><span class="mut">cache file missing &mdash; degraded, not a fake zero</span></div>';
+  } else {
+    fleetHtml+='<div class="row"><span class="k">account status</span><span>'+esc(ac.accountStatus||'unknown')+'</span></div>';
+    fleetHtml+='<div class="row"><span class="k">devices allowed</span><span>'+(ac.currentDeviceCount!=null?ac.currentDeviceCount:'&mdash;')+' / '+(ac.maxDevicesAllowed!=null?ac.maxDevicesAllowed:'&mdash;')+'</span></div>';
+  }
+  fleetHtml+='<div class="row"><span class="k">this device</span><span>'+(fc.linkOk?esc(fc.deviceName||'unknown'):'<span class="mut">lms link status unavailable</span>')+'</span></div>';
+  var peers=fc.peers||[];
+  fleetHtml+='<div class="row"><span class="k">connected peers</span><span>'+peers.length+'</span></div>';
+  fleetHtml+=peers.map(function(p){
+    return '<div class="row"><span>'+esc(p.deviceName)+'</span><span class="k">'+esc(p.status||'?')+(p.loadedModels&&p.loadedModels.length?' &middot; '+p.loadedModels.map(esc).join(', '):'')+'</span></div>';
+  }).join('');
+  var pool=fc.pool||[];
+  fleetHtml+='<div class="mut" style="margin-top:8px;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Resident pool</div>';
+  fleetHtml+= pool.length? pool.map(function(m){
+    var badgeCls= m.originKind==='unknown'?'badge-amber':(m.originKind==='device'?'badge-teal':'badge-mut');
+    return '<div class="row"><span class="mono">'+esc(m.identifier)+'</span><span class="k">'+esc(m.status||'')+' <span class="badge '+badgeCls+'">'+esc(m.origin)+'</span></span></div>';
+  }).join('') : '<div class="mut">no models resident</div>';
+  document.getElementById('ov-fleet').innerHTML=fleetHtml;
 }
 function sparkSvg(vals){
   var pts=(vals||[]).filter(function(v){return v!=null});
@@ -1045,8 +1229,16 @@ async function loadModels(){
     var rows=c.catalog.map(function(m,i){
       var ctxBadge=(m.loaded&&m.contextLength>=200000)?' <span class="badge badge-amber">ctx ≥ 200K</span>':'';
       var stateCell=m.loaded?('<span class="dot up"></span>'+esc(m.status||'loaded')+' &middot; '+fmtK(m.contextLength)+' &middot; TTL '+fmtTtl(m.ttlMs,m.lastUsedTime)):'<span class="mut">on disk</span>';
+      var originCell='<span class="mut">&mdash;</span>';
+      if(m.loaded){
+        if(m.originKind==='unknown') originCell='<span class="badge badge-amber" title="deviceIdentifier unresolved, or a local (deviceIdentifier:null) load under an identity not on the known-loader-script allowlist">'+esc(m.origin)+'</span>';
+        else if(m.originKind==='device') originCell='<span class="badge badge-teal" title="running on a named LM Link fleet device">fleet: '+esc(m.origin)+'</span>';
+        else originCell='<span class="badge badge-mut">local</span>';
+      }
       var actionCell=m.loaded?
-        '<button onclick="unloadModel('+i+')">Unload</button>'
+        (m.originKind==='local'?
+          '<button onclick="unloadModel('+i+')">Unload</button>'
+          : '<span class="mut" title="This model is running on another LM Link device. Unloading it from here would kill it on THAT machine — control it from its own device.">remote &mdash; no controls</span>')
         : ('<button onclick="showLoadRow('+i+')">Load</button>'+
            '<span id="loadrow-'+i+'" style="display:none;gap:4px;align-items:center;margin-top:4px">'+
            '<input type="number" id="loadctx-'+i+'" value="32768">'+
@@ -1058,10 +1250,11 @@ async function loadModels(){
         '<td>'+m.sizeGB+' GB</td>'+
         '<td>'+fmtK(m.maxContextLength)+'</td>'+
         '<td>'+stateCell+'</td>'+
+        '<td>'+originCell+'</td>'+
         '<td>'+actionCell+'</td>'+
         '</tr>';
     }).join('');
-    document.getElementById('models-table').innerHTML='<table class="tbl"><thead><tr><th>Model</th><th>Arch/Params</th><th>Quant</th><th>Size</th><th>Max ctx</th><th>State</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    document.getElementById('models-table').innerHTML='<table class="tbl"><thead><tr><th>Model</th><th>Arch/Params</th><th>Quant</th><th>Size</th><th>Max ctx</th><th>State</th><th>Origin</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table>';
     document.getElementById('models-footer').textContent='catalog: '+c.totalGB+' GB total \\u00b7 engine: '+(lastStatus&&lastStatus.services.engine||'unknown');
   }catch(e){ document.getElementById('models-table').innerHTML='<div class="mut">catalog fetch failed</div>' }
 }
@@ -1155,13 +1348,14 @@ function renderPlugins(){
 // ── system tab ──
 function renderSystem(s){
   var winPct=Math.min(100,Math.round(s.ram.usedGiB/s.ram.totalGiB*100));
-  var gpuPct=Math.min(100,Math.round(s.gpu.dedicatedGiB/s.gpu.carveoutGiB*100));
+  var haveCarve=s.gpu.carveoutGiB!=null;
+  var gpuPct=haveCarve?Math.min(100,Math.round(s.gpu.dedicatedGiB/s.gpu.carveoutGiB*100)):0;
   var sharedCls=s.gpu.sharedGiB>8?'amber':'';
   document.getElementById('sys-memory').innerHTML=
     '<div class="row"><span class="k">Windows pool</span><span>'+s.ram.usedGiB+' / '+s.ram.totalGiB+' GiB</span></div><div class="bar"><i style="width:'+winPct+'%"></i></div>'+
-    '<div class="row" style="margin-top:10px"><span class="k">GPU carveout</span><span>'+s.gpu.dedicatedGiB+' / '+s.gpu.carveoutGiB+' GiB</span></div><div class="bar"><i style="width:'+gpuPct+'%"></i></div>'+
+    '<div class="row" style="margin-top:10px"><span class="k">GPU carveout</span><span>'+s.gpu.dedicatedGiB+(haveCarve?' / '+s.gpu.carveoutGiB+' GiB':' GiB (capacity unknown)')+'</span></div>'+(haveCarve?'<div class="bar"><i style="width:'+gpuPct+'%"></i></div>':'')+
     '<div class="row" style="margin-top:10px"><span class="k">GPU shared</span><span'+(sharedCls?' style="color:var(--amber)"':'')+'>'+s.gpu.sharedGiB+' GiB</span></div><div class="bar '+sharedCls+'"><i style="width:'+Math.min(100,s.gpu.sharedGiB/8*100)+'%"></i></div>'+
-    '<div class="mut" style="margin-top:6px">machine total: '+s.machineTotalRamGiB+' GiB unified</div>';
+    '<div class="mut" style="margin-top:6px">'+(haveCarve?'GPU capacity from driver registry (portable across boxes)':'machine total: '+s.machineTotalRamGiB+' GiB unified')+'</div>';
   var diskPct=s.disk.ok?Math.round(s.disk.usedGB/s.disk.totalGB*100):0;
   var diskCls=!s.disk.ok?'':(s.disk.freeGB<50?'red':(s.disk.freeGB<150?'amber':''));
   document.getElementById('sys-disk').innerHTML=s.disk.ok?
@@ -1878,6 +2072,14 @@ const server = http.createServer(async (req, res) => {
       try { body = await readBody(req); } catch { res.writeHead(400); res.end('bad json'); return; }
       const { identifier } = body || {};
       if (!identifier) { res.writeHead(400); res.end('identifier required'); return; }
+      // Server-side guard, not just UI: refuse to unload a model that is
+      // running on another LM Link device (the 5070 Ti port found this
+      // button could kill a remote box's active brain).
+      const ps = await lmsPs();
+      const target = (ps || []).find(m => m.identifier === identifier);
+      if (target && target.deviceIdentifier != null) {
+        res.writeHead(403); res.end('refused: model runs on a remote LM Link device — unload it from that device'); return;
+      }
       spawn('lms', ['unload', identifier], { detached: true, stdio: 'ignore', shell: true }).unref();
       res.writeHead(200); res.end('ok'); return;
     }

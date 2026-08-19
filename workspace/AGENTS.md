@@ -23,6 +23,12 @@ anything about this machine.
 - **Speed shape:** your first turn in a session pre-reads ~10K tokens (slow);
   later turns ride the prefix cache. Long sessions decode slower — that's
   Vulkan at depth, not a fault.
+- **Fleet pool (LM Link):** LM Studio here is linked to other machines —
+  models in `lms ps` may be loaded/driven by OTHER devices, and identities
+  can resolve to remote hardware. HALO identities are unsuffixed; remote
+  devices use `-<device>` suffixes (e.g. `qwen/qwen3.8-27b-5070ti`).
+  Check origin before assuming a model is local or free; never bench
+  while foreign models are active.
 - **Config is live:** the harness hot-reconciles `~\.dsh\cordis.patch.yml`
   and `settings.yaml` within ~20 s of a save — never restart the server for
   a config change, and treat config edits as immediately production-affecting.

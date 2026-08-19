@@ -14,6 +14,31 @@ chronological diff.
 ## [Unreleased]
 
 ### Added
+- **Bench Day 3** (`docs/phases/bench-day-3-results.md`): MTP stays ON at
+  stock n=4 on HALO's Vulkan (locked — mirror image of the CUDA sibling);
+  KV q8_0 flat on Vulkan (locked NO — vs CUDA's 2.4× unlock; per-engine
+  doctrine proven from both directions); brain keeps the cockpit crown —
+  MoE candidates decoded 2.7–4× faster but lost wall-clock via 5–7.5×
+  more output tokens; qwen3.6-35b-a3b remains a worker candidate;
+  gpt-oss-120b DNS at the 64/64 split. Includes a live federation-
+  contention incident, handled and documented.
+- **Port PROVEN: full stack installed on an RTX 5070 Ti 16GB box**
+  (`docs/ports/tester-5070ti-bench-2026-08-18.md`): `Deploy-ToLive.ps1`
+  clean three times, live loaders/launcher/icons/plugins/Mission Control
+  serving; installed config = UD-Q3_K_XL all-GPU, KV q8_0, MTP off —
+  1,668 tok/s prefill, 0.33 s cached TTFT, 42 tok/s @30K, harness task
+  73 s vs HALO's 176 s, worker fan-out task 2.5 s vs 41 s. Three
+  measurement passes replicated. Port-discovered stack fixes shipped:
+  Mission Control carveout math de-hardcoded (VRAM capacity from driver
+  registry), remote fleet models stripped of Load/Unload controls with a
+  server-side refusal guard, clean-machine deploy-order bug documented,
+  eviction JIT-downgrade trap documented, sha256 model-file gate adopted
+  as policy.
+- **Fleet: LM Link** — LM Studio multi-device pooling adopted deliberately
+  with discipline: device-suffixed identities (HALO canonical unsuffixed),
+  bench-guard rule (no benches with foreign models active), Mission
+  Control origin labels + fleet card + cross-origin contention alarm;
+  documented in the manual, AGENTS.md, and delta-scan watches.
 - **Mission Control "Memory" tab** — interactive force-directed knowledge
   graph (cursor-anchored wheel-zoom, drag-pan, draggable nodes, click-node
   detail panel with observations + clickable connections, live refresh);

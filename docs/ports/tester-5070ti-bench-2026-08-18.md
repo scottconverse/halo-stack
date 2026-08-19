@@ -1,41 +1,20 @@
-# Port study: HALO stack config on an RTX 5070 Ti 16GB (Blackwell)
+# Port: RTX 5070 Ti 16GB ("TESTER") — full stack install + bench
 
-**Status: model/engine layer benched thoroughly; the HARNESS layer was NOT
-deployed** — the dispatch prompt from the orchestrator mislabeled the dsh
-install "optional, only if time allows," inverting the operator's actual
-purpose (testing halo-stack portability). The bench below is the engine
-half of the answer; a follow-up run owes the harness half. Recorded as the
-second purpose-inversion of 2026-08-18 (see
-`docs/experiments/creator-mode-2026-08-18.md`, "the ugly").
+**Status: REAL install proven.** `Deploy-ToLive.ps1` ran clean end-to-end three
+times on the target box; the live stack (loaders, launcher, desktop icons,
+Mission Control, subagent plugins) is installed and serving there. This
+supersedes the earlier same-day sandbox-only version of this document, which
+was correctly rejected as not testing the product.
 
-What this run DID establish, in one line each:
-- **Prefill is a rout on CUDA:** 1,547 tok/s vs HALO's 181 (8.5×); this
-  box's COLD 19.5K TTFT (12.6 s) beats HALO's CACHED turn (13.4 s).
-- **KV q8_0 is the unlock on 16 GB:** depth decode 17.8 → **42.3 tok/s**
-  at 30K with no visible quality change; q4_0 is SLOWER than q8_0
-  (dequant overhead) — q8_0 is the sweet spot.
-- **MTP must be dropped on this CUDA engine** (decode roughly thirds;
-  one nuance: high-acceptance code tasks on the hybrid config still
-  benefited — engine- and workload-specific, not universal).
-- **Two silent killers for NVIDIA deploys:** driver memory-clock parking
-  (P3 @7,001 MHz halves decode — check `nvidia-smi
-  --query-gpu=clocks.mem,pstate` under load) and the server's default
-  4 parallel slots (KV ×4 → spill → halved decode; `parallel: 1` needs a
-  wire-level key on current builds).
-- **The ceiling:** the actual HALO brain (21 GB Q5 @65K) is physically
-  impossible in 16 GB; Q3/Q4-class @32K (clamped to 32,000 by the server)
-  is the box's quality ceiling, and the Q4 hybrid costs 3–5× decode.
-- **Best-value config found:** UD-Q3_K_XL · 100% GPU · 32K ctx · KV q8_0 ·
-  MTP off · FA on → 12.6 s cold TTFT / 0.9 s cached / 42 tok/s @30K /
-  59 s coding task.
-
-Portability verdict so far: flash attention, parallel 1, and
-contextCheckpoints transfer; Vulkan-era MTP defaults and f16 KV do NOT —
-**the loader profile needs a per-engine overlay, not a copy.**
+Report below is the TESTER box's own record, verbatim (operator-prompted,
+independent agent, measured on-box 2026-08-18). Stack-side fixes it forced —
+Mission Control's hardcoded-carveout defect and the federated-Unload footgun —
+are fixed in this repo's Mission Control (portable VRAM detection via driver
+registry; remote fleet models get no Load/Unload controls in the UI **and**
+the unload endpoint refuses them server-side, verified against the live
+remote model).
 
 ---
-
-The full report as filed by the TESTER session (verbatim):
 
 # TESTER bench — RTX 5070 Ti 16GB vs HALO baselines
 
@@ -64,9 +43,10 @@ Models (byte-verified against HF listing after download):
 
 Load profile mirrored from `lmstudio/Load-OpenCode-Qwen.mjs` (flash attention,
 contextCheckpoints 32, parallel 1, KV on GPU), except context 32,768 not 65,536.
-**Server quirk:** every load path (CLI and SDK) clamps the requested 32,768 to
-an applied **32,000** — reported by `lms ps --json`; all "32K" rows below ran at
-32,000 applied context.
+**Server behavior (corrected):** this LM Studio build **auto-sizes context to
+leftover VRAM** — a 32,768 request became 32,000 applied with f16 KV and
+**40,448** with q8_0 KV (`lms ps --json` is the truth source). An earlier draft
+of this report called it a fixed clamp; the q8_0 upsize refuted that.
 
 ## Configs tested
 
@@ -100,10 +80,35 @@ MTP speculative decoding at stack defaults (n=4, p=0.5) was measured in full and
 | Coding task (two-bug repo, to verified fix) | **59.4 s** | 125.8 s | 176 s (Q5 brain) |
 
 Coding task passed on attempt 1 in every configuration, verified by running the
-test suite on disk. (HALO's 176 s was via the dsh harness; here a scripted
-single-shot fix loop against `api/v0` — same task shape, lighter wrapper.
-The optional dsh-harness install was skipped; session time went to the
-performance diagnosis below.)
+test suite on disk. The 59.4 s row is a scripted single-shot fix loop against
+`api/v0`; the harness-proper run is below.
+
+## The stack itself runs here — dsh rc.7 proof
+
+The pinned harness was installed and booted on this box (same session,
+follow-up run): `npx @deepseek-ai/dsh@0.1.0-rc.7 web` in a sandboxed
+`DSH_HOME` with the repo's `dsh/` configs adapted (provider → local LM Studio
+identity `bench/qwen3.8-27b` at 32K; memory graph isolated to the sandbox;
+subagent trio omitted — needs the per-profile plugin installs; browser MCP
+kept disabled per known issue 1; Exa keyless).
+
+- **Boot:** cold `npx` (package download included) → cockpit serving on
+  `127.0.0.1:3080` in **183 s**; web UI renders (composer, workspace picker,
+  preset selector); boot log clean apart from npm deprecation warnings;
+  sandboxed Knowledge-Graph memory MCP came up on stdio.
+- **Harness task run (headless profile), same two-bug repo:** `dsh --profile
+  headless` found both planted bugs, fixed `inventory.js` without touching
+  `test.js`, ran the tests itself, and reported both root causes correctly —
+  **79 s** wall-clock, exit 0, `ALL TESTS PASSED` verified on disk after the
+  run. Local model confirmed as the server (`lms ps` last-used timestamp;
+  the federated HALO device untouched). HALO's same-shape harness run: 176 s.
+- **Windows quirks encountered:** none beyond the repo's documented list —
+  the two applicable workarounds (browser-MCP row disabled, non-drive-root
+  workspace) were applied preemptively and nothing new surfaced.
+- **Config adaptation that matters on a federated box:** the repo's model
+  identity `qwen/qwen3.8-27b` resolves to the *remote HALO device* through LM
+  Studio federation here — an unadapted deploy would silently run the cockpit
+  on HALO's compute. The local deploy must use a distinct local identity.
 
 KV-sweep quality check (code-explanation at 30K depth, all three KV levels):
 all three produced technically correct debounce explanations; no
@@ -139,10 +144,125 @@ word-counting inside the reasoning block (model behavior, not KV corruption).
    server builds; public SDK 1.5.0 predates it — bench.mjs documents the
    wire-level injection).
 
+## Round 2 — REAL install (Deploy-ToLive) and full re-run
+
+Done same-day after the sandbox proof was (rightly) rejected as not testing the
+product. Everything below ran on the **live install**: `~\.dsh`, deployed
+loaders, Mission Control, desktop icons — no sandbox.
+
+### Install record
+
+- `Deploy-ToLive.ps1` ran clean end-to-end THREE times (initial + two
+  adaptation redeploys): drift-guard → YAML pre-validate → staged
+  compose-validate → backup → apply → live validate. All 19 files live;
+  timestamped backups under `~\.dsh\ConfigBackups\`. `.env` correctly
+  preserved on redeploy.
+- Subagent plugins installed for both profiles (web, headless) per the
+  deploy's printed command. Upstream packaging warning on all three subagent
+  packages ("declares no dsh.bundle — installed as plain dependency"); the
+  cordis patch rows still mount them.
+- Both desktop icons created: **DeepSeek Harness**, **Mission Control**.
+- Launcher (icon path) boots to a serving cockpit in **20 s** warm.
+- Mission Control serves at :3090: services panel correct (cockpit up, LM
+  Studio up, CUDA engine string right), alarm strip nominal, GPU shared-pool
+  alarm logic working.
+
+### Adaptations required (the full "tweaked for this Blackwell box" list)
+
+1. Model identity suffixed `-5070ti` everywhere (settings.yaml, cordis patch,
+   loaders, opencode.json, launcher): the stock identity resolves to the
+   **federated HALO machine** on this box — an unadapted deploy silently runs
+   the cockpit on HALO's compute over the network.
+2. Brain loader: Q5_K_XL→UD-Q3_K_XL, KV q8_0, MTP off, gpu max + strict cap,
+   parallel 1 (wire-injected over public SDK 1.5.0; the repo's vendored SDK
+   isn't in the repo).
+3. Worker loader: same SDK/wire treatment; context check loosened to ≥24K
+   (auto-sizing).
+4. `Start-DSH.ps1` brain check: must filter `deviceIdentifier -eq null` or the
+   federated remote satisfies it and the local brain never loads.
+5. `AGENTS.md`: hardware/speed facts rewritten for this box + scope header so
+   non-HALO agents in `Desktop\CODE` ignore it.
+6. `opencode.json`: model route → local identity, ctx 32000. NOTE: this box
+   already had a live `opencode.jsonc`; the deployed `opencode.json` now sits
+   beside it (backup retained) — verify which one opencode honors before
+   daily-driving.
+
+### Findings from the real install (things the sandbox could not see)
+
+- **Clean-machine order bug:** README says deploy → launch, but
+  `Deploy-ToLive.ps1`'s YAML validator borrows js-yaml from the dsh profile
+  install, which doesn't exist until dsh has run once. On a virgin box, run
+  `npx @deepseek-ai/dsh@0.1.0-rc.7 web --dump-config` once, then deploy.
+- **Launcher swallows loader failures** (`| Out-Null`): a failed brain load
+  still yields a "working" cockpit with no local model. Surfaced by finding 4
+  above; worth an upstream fix.
+- **Eviction silently downgrades config:** if the brain is evicted (TTL,
+  memory pressure, worker load), the next API call JIT-reloads it with
+  LM Studio defaults — not the loader profile — and decode drops (measured
+  17.5 vs 49 tok/s). The launcher re-check covers reboot, not eviction.
+- **Two-model residency resolves by eviction:** loading the worker beside the
+  brain does not fail — LM Studio silently evicts the brain. The stack's
+  on-demand worker pattern works here, but "both resident" (HALO's normal
+  state) is physically impossible; every brain↔worker switch costs a reload
+  plus the JIT-downgrade trap above.
+- **Mission Control on non-HALO hardware:** one real defect — GPU carveout
+  math hardcodes 128 GiB unified memory ("14.9 / 96.4 GiB carveout" on a
+  16 GiB discrete card). And one footgun — the Models tab lists the
+  **federated remote device's models with live Load/Unload buttons**,
+  indistinguishable from local ones; an Unload click here would kill the HALO
+  box's active brain. *(Both fixed in the repo's Mission Control same day:
+  VRAM capacity now read from the driver registry, remote models show no
+  controls, and the unload endpoint refuses remote identities server-side.)*
+- **Download integrity:** two 17 GB worker-GGUF downloads came back
+  size-exact but hash-corrupt (symptom: garbage `???` output, mid-inference
+  tensor-bounds crashes). Root cause: an earlier suspended-then-resumed
+  background download was still writing the same file while later resumes
+  interleaved. Fix: single-writer download + **sha256 gate against the HF API
+  (`?blobs=true` lfs.oid) before any model is benched or shipped** — worth
+  adopting as stack policy.
+
+### As-installed numbers (product config: Q3_K_XL, KV q8_0, MTP off, ctx 40448)
+
+| Metric | Installed brain | Installed worker (Coder MoE) | HALO brain | HALO worker |
+|---|---|---|---|---|
+| Cold prefill 19.5K | **1,668 tok/s** (TTFT 11.7 s) | 2,580 tok/s (TTFT 7.5 s) † | 181 (108.6 s) | 615 (31.8 s) |
+| Cached TTFT | **0.33 s** | 0.13 s † | 13.4 s | 0.28 s |
+| Decode short | **49.0 tok/s** | 59.4–88.9 tok/s † | 26.9 | 90.9 |
+| Decode @30K | **42.1 tok/s** | 52 tok/s † (once; see stability) | ~10 (deep) | — |
+| Two-bug task (script) | **28.7 s** | **2.5–3.1 s** (3/3 pass) | — | — |
+| Two-bug task (via dsh headless) | **73 s** | — | 176 s | 41 s |
+
+† hash-verified file, but see the stability finding: long-context worker runs
+die; treat every worker number above except the coding-task row as
+single-measurement.
+
+**Worker stability on 16 GB (important):** Q4_K_S (16.3 GB weights + ~4.6 GB
+forced into the GPU shared pool) is **rock-solid in its designed role** —
+short-context fan-out coding tasks: three consecutive two-bug repairs in
+2.5–3.1 s each, instance stable throughout, absurdly faster than HALO's 41 s.
+But it **reliably crashed the instance at ~19.5K+ context** (three deaths
+across three load configs, including CPU-expert-ratio hybrid; the repeated
+crashes eventually took the whole engine host down, dropping all models until
+a server restart). Verdict: keep the worker for what the stack uses it for
+(fan-out), cap its requests well below 19K context here, and consider a
+Q3-class MoE quant if long-context worker use ever matters on this box.
+
+The installed product config beats every ad-hoc bench config measured earlier
+in this report: q8_0 KV helps short-context decode too (49 vs 25 tok/s — the
+earlier "decode short" rows ran f16 KV).
+
+### Matrix pass 3 (same cells as rounds 1–2, through the installed engine)
+
+Replication held across all cells: A-f16 battery 1,523 prefill / 0.95 s cached
+/ 24.4 short / 16.9 deep; A depth q8_0 42.1, q4_0 30.0 (vs 42.3/30.0 prior);
+B battery 1,134 prefill / 2.23 s cached / 9.0 short / 5.4 deep; B depth q8_0
+5.9, q4_0 7.2 (vs 6.1/7.7); B coding task 160 s pass (vs 126 s — hybrid
+variance). Three independent passes agree; the numbers are stable.
+
 ## Verdict (5 lines)
 
 1. **Prefill/compute is a rout:** 1,547 tok/s vs 181 — 8.5× HALO; this box's *cold* 19.5K TTFT (12.6 s) beats HALO's *cached* TTFT (13.4 s), and its cached turn is ~1 s — the prefix-cache architecture HALO depends on is a nice-to-have here, not load-bearing.
 2. **Deep-context decode, the right way:** with KV q8_0, 42 tok/s at 30K — ~1.6× HALO's short-context rate and ~4× its deep rate; the CUDA card turns HALO's worst case into this box's best case.
 3. **What it can't do:** the stack's actual brain (21 GB Q5_K_XL at 65K ctx) and two-model residency are physically impossible in 16 GB — quality ceiling is Q3/Q4-class weights at 32K, and the Q4 hybrid costs ~3–5× decode for one quant step of quality.
 4. **Config that transfers, config that doesn't:** flash attention + parallel 1 + contextCheckpoints transfer fine; Vulkan-era MTP defaults must be dropped, and KV must be quantized to q8_0 — the HALO loader profile is not portable as-is.
-5. **Best-value config found:** UD-Q3_K_XL, 100% GPU, 32K ctx, KV q8_0, MTP off, flash attention on — 1,547 tok/s prefill / 12.6 s cold TTFT / 0.9 s cached / 25 tok/s short / 42 tok/s @30K / 59 s coding task, all with ~1 GB VRAM to spare.
+5. **Best-value config — now the INSTALLED config:** UD-Q3_K_XL, 100% GPU, KV q8_0, MTP off, flash attention, ctx auto-sized 32–40K — 1,668 tok/s prefill / 11.7 s cold TTFT / 0.33 s cached / 49 tok/s short / 42 tok/s @30K / 28.7 s coding task (73 s through the installed dsh cockpit vs HALO's 176 s; worker fan-out task 2.5 s vs HALO's 41 s). The full stack — deploy, launchers, icons, plugins, Mission Control — is installed and running on this box under that config; the remaining rough edges are the Mission Control carveout math, the federated-Unload footgun, and the worker's long-context crashes, all documented above.
