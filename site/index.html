@@ -68,7 +68,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
 </header>
 
 <div class="hero">
-  <div class="kicker">100% local · one machine · every number measured<span class="pill">v0.1.0</span></div>
+  <div class="kicker">100% local · one machine · every number measured<span class="pill">v0.2.0</span></div>
   <h1>Frontier-class coding agents. No cloud required.</h1>
   <p class="sub">HALO is a fully local AI coding stack on a single AMD&nbsp;Strix&nbsp;Halo machine: a 27-billion-parameter brain, an on-demand MoE worker, a hardened agent cockpit with full-drive access, and a one-glance dashboard. Nothing on this page is a vendor claim — it was all benchmarked on the machine it runs on.</p>
   <div class="ctas">
@@ -82,7 +82,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
   <div class="stat"><b>4.3×</b><span>faster complete coding tasks on the MoE worker vs the dense brain — same task, same harness</span></div>
   <div class="stat"><b>8.1×</b><span>time-to-first-token from prefix caching on the brain (108.6&nbsp;s → 13.4&nbsp;s at 19.6K tokens)</span></div>
   <div class="stat"><b>90.9 tok/s</b><span>worker decode; 615&nbsp;tok/s prefill — measured, not estimated</span></div>
-  <div class="stat"><b>65,536</b><span>token context, with proven continuity across forced compaction and an OS reboot</span></div>
+  <div class="stat"><b>131,072</b><span>token context (KV q8_0 makes the doubled window cost what 65K/f16 did), with proven continuity across forced compaction and an OS reboot</span></div>
   <div class="stat"><b>$0</b><span>marginal cost per token for all daily coding — the models live on the machine</span></div>
   <div class="stat"><b>2 machines</b><span>the same repo's deploy pipeline installed the full stack on an RTX&nbsp;5070&nbsp;Ti box — harness coding task 73&nbsp;s there vs 176&nbsp;s on HALO, three measurement passes replicated</span></div>
 </div>
@@ -119,7 +119,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
       <path class="arrow" d="M320 202 L480 258"/><path class="arrow" d="M770 202 L610 258"/>
       <rect class="node good" x="395" y="258" rx="13" width="290" height="66"/><text class="svg-t" x="540" y="284" text-anchor="middle">LM Studio API · :1234</text><text class="svg-c" x="540" y="304" text-anchor="middle">one iGPU, one memory bus, queued turns</text>
       <path class="arrow" d="M480 324 L340 372"/><path class="arrow" d="M600 324 L740 372"/>
-      <rect class="node good" x="165" y="372" rx="13" width="330" height="76"/><text class="svg-t" x="330" y="398" text-anchor="middle">Brain · Qwen3.8-27B Q5</text><text class="svg-c" x="330" y="418" text-anchor="middle">resident 21 GB · 65,536 ctx · vision</text><text class="svg-c" x="330" y="436" text-anchor="middle">prefill cached across turns (8.1×)</text>
+      <rect class="node good" x="165" y="372" rx="13" width="330" height="76"/><text class="svg-t" x="330" y="398" text-anchor="middle">Brain · Qwen3.8-27B Q5</text><text class="svg-c" x="330" y="418" text-anchor="middle">resident ~27 GB · 131,072 ctx · vision</text><text class="svg-c" x="330" y="436" text-anchor="middle">prefill cached across turns (8.1×)</text>
       <rect class="node warn" x="585" y="372" rx="13" width="330" height="76"/><text class="svg-t" x="750" y="398" text-anchor="middle">Worker · Qwen3 Coder 30B MoE</text><text class="svg-c" x="750" y="418" text-anchor="middle">on demand, 2 h TTL, ~16 GB returned idle</text><text class="svg-c" x="750" y="436" text-anchor="middle">fan-out at 4.3× task speed</text>
       <path class="arrow" d="M150 160 L60 160 L60 500 L150 500"/>
       <rect class="node" x="150" y="470" rx="12" width="360" height="60"/><text class="svg-t" x="330" y="494" text-anchor="middle">Reach</text><text class="svg-c" x="330" y="514" text-anchor="middle">Codex · Claude Code · OpenCode (ACP) · memory graph</text>

@@ -34,7 +34,7 @@ observations follow after it.
   (3) blank workspace titles unclickable, (4) npm .ps1 shims need `cmd /c`
   for the ACP provider, (5) subagent provider plugins are per-profile installs.
 - Inference: LM Studio at 127.0.0.1:1234/v1; brain = Qwen3.8-27B UD-Q5_K_XL
-  (id qwen/qwen3.8-27b, ctx 65,536, context checkpoints 32, MTP depth 4);
+  (id qwen/qwen3.8-27b, ctx 131,072, KV q8_0, context checkpoints 32, MTP depth 4);
   worker = Qwen3 Coder 30B A3B MoE, on-demand (~16 GB, 2 h TTL).
 - Locked bench verdicts (flag anything that could overturn them for re-bench):
   Q5 + Standard mode = cockpit; Coder MoE wins fan-out at ~4.3× wall-clock;

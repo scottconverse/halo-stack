@@ -14,11 +14,11 @@ const run = process.argv[1], modelId = process.argv[2];
 http.get("http://127.0.0.1:1234/api/v0/models", (res) => {
   let b = ""; res.on("data", (c) => b += c);
   res.on("end", () => {
-    let ctx = 65536;
+    let ctx = 131072;
     try {
       const m = JSON.parse(b).data.find((x) => x.id === modelId);
       if (m && m.loaded_context_length) ctx = m.loaded_context_length;
-      else if (m && m.max_context_length) ctx = Math.min(m.max_context_length, 65536);
+      else if (m && m.max_context_length) ctx = Math.min(m.max_context_length, 131072);
     } catch (e) { console.error("model list parse failed: " + e.message); process.exit(1); }
     const promptBudget = 24000, safety = 2000;
     const room = ctx - promptBudget - safety;

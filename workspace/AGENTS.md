@@ -29,6 +29,14 @@ anything about this machine.
   devices use `-<device>` suffixes (e.g. `qwen/qwen3.8-27b-5070ti`).
   Check origin before assuming a model is local or free; never bench
   while foreign models are active.
+- **Output-wall physics (code-traced):** your reply budget is always
+  min(maxTokens, room left in the 131,072 window). A truncated tool call is
+  DISCARDED by the harness — unrecoverable, "continue" starts a new
+  generation. So: prefer incremental file edits (create/insert/str_replace)
+  over one giant emit; put large single outputs early in a session or in a
+  fresh one; late-session work must be incremental. For artifacts beyond a
+  few thousand tokens, use the budgeted-emit pipeline
+  (`halo-stack\pipeline\run.ps1`).
 - **Config is live:** the harness hot-reconciles `~\.dsh\cordis.patch.yml`
   and `settings.yaml` within ~20 s of a save — never restart the server for
   a config change, and treat config edits as immediately production-affecting.

@@ -62,8 +62,8 @@ NODES = {   'measure_room': {   'id': 'measure_room',
                                'label': 'No usable session: start fresh headless',
                                'kind': 'code',
                                'detail': 'Start a new dsh --profile headless session '
-                                         '(cold context = maximum room: ~55K usable of '
-                                         'the 65,536 window after the ~10K boot '
+                                         '(cold context = maximum room: ~120K usable '
+                                         'of the 131,072 window after the ~10K boot '
                                          'prefix); write room.json from its measured '
                                          'pressure.',
                                'writes': ['room.json'],

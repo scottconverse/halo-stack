@@ -27,7 +27,9 @@ and hourly memory-graph snapshots (2026-08-18 — see
 | `dsh/` | Harness config surface: `settings.yaml` (provider route), `cordis.patch.yml` (MCP + subagent rows), launchers, bench overlays, `memory/Snapshot-Memory.ps1` (hourly memory-graph snapshot) | `~\.dsh\` |
 | `dsh/agent-presets/halo-standard/` | Default preset: standard + Codex/Claude/OpenCode subagent tools | `~\.dsh\.agent-presets\halo-standard\` |
 | `lmstudio/` | Pinned model loaders (brain, worker) + MTP sweep tool | `~\.lmstudio\scripts\` |
-| `mission-control/` | Mission Control v3 — single-file, zero-dep, 5-tab operator console (`overview/models/sessions/plugins/system`) + master alarm strip, `127.0.0.1:3090` | `~\.dsh\mission-control\` |
+| `mission-control/` | Mission Control — single-file, zero-dep, 6-tab operator console (`overview/models/sessions/plugins/system/memory` incl. the interactive memory graph) + master alarm strip, fleet-aware, `127.0.0.1:3090` | `~\.dsh\mission-control\` |
+| `machines/` | Per-machine deploy profiles (base = HALO; `5070ti.yml` renders over base at deploy time — one master serves every box) | selected via `~\.dsh\machine` |
+| `pipeline/` | Budgeted-emit pipeline: generative artifacts of any size without hitting the output-token wall (room-measured chunks, sentinel truncation gates, clean-room local review) | runs in place |
 | `opencode/` | OpenCode config (local daily driver + cloud routes) | `~\.config\opencode\` |
 | `scripts/` | `Sync-FromLive.ps1` (live → repo, ends with a `--dump-config` validation gate), `Deploy-ToLive.ps1` (repo → live, transactional: drift guard → YAML pre-validate → staged compose-validate in a `DSH_HOME` sandbox → timestamped backup → apply → live validate → automatic rollback on failure) |
 
