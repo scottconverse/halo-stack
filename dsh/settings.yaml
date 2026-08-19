@@ -13,9 +13,12 @@ llm-pi-ai:
       models:
         - id: qwen/qwen3.8-27b
           name: Qwen3.8 27B Q5 — daily brain
-          contextWindow: 65536
+          # 131072 adopted 2026-08-19 (bench-window-131k.md): KV q8_0 halves
+          # KV bytes, so the doubled window costs the same GPU footprint as
+          # the old 65536/f16 config, decode parity proven to 110K depth.
+          contextWindow: 131072
           # 49152: length cap only — zero speed/memory cost. Effective limit
-          # is always min(cap, room left in the 65,536 context window), so
+          # is always min(cap, room left in the 131,072 context window), so
           # this setting means "config is never the limit; the window is."
           # History: 8192/16384/24576 all truncated creator-mode plugin
           # emits mid-source (2026-08-18). Only residual purpose of a cap:

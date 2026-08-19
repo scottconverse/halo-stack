@@ -6,8 +6,8 @@ facts:
   identity: qwen/qwen3.8-27b
   workerIdentity: qwen3-coder-30b-a3b-instruct
   brainModel: unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q5_K_XL.gguf
-  contextLength: 65536
-  kvCache: f16
+  contextLength: 131072 (adopted 2026-08-19, bench-window-131k.md — same footprint as old 65536/f16)
+  kvCache: q8_0 (halves KV bytes; decode parity proven shallow and deep on Vulkan)
   mtp: on (n=4, p=0.5 — measured optimal on Vulkan at parallel=1)
   engine: llama.cpp Vulkan
   memoryNote: both models resident simultaneously; eviction is rare
