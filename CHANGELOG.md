@@ -11,7 +11,7 @@ install/wire, Phase 2 baseline/bench, Phase 3 reach, Phase 4 harden,
 This entry summarizes what the stack *is* at this version, not a
 chronological diff.
 
-## [Unreleased]
+## [0.2.0] - 2026-08-18
 
 ### Added
 - **Bench Day 3** (`docs/phases/bench-day-3-results.md`): MTP stays ON at
