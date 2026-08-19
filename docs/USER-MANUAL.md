@@ -691,6 +691,26 @@ documented Windows workarounds (nothing new surfaced).
   (`qwen/qwen3.8-27b-5070ti`) and the brain-presence check must filter
   `deviceIdentifier -eq null` (see Fleet below).
 
+**Advisory for 16 GB-class deploys** (measured on the 5070 Ti box, issue #5):
+- **Cap worker requests well below 19K context.** The Coder MoE Q4_K_S
+  (16.3 GB weights + ~4.6 GB forced into the GPU shared pool) is rock-solid
+  in its designed fan-out role (2.5–3.1 s per two-bug task, three in a row)
+  but reliably killed its instance at ~19.5K+ tokens — three deaths across
+  three load configs, and the repeated crashes eventually took the whole
+  engine host down. If long-context worker use matters on a 16 GB box, use
+  a Q3-class MoE quant that fits VRAM entirely.
+- **Watch for the eviction JIT-reload.** On any box where eviction is
+  routine (16 GB can't hold both models), a evicted brain reloads on the
+  next API call with *server defaults*, not the loader profile — measured
+  17.5 vs 49 tok/s. The launcher re-checks on every icon click, and Mission
+  Control now alarms MODELS amber when the loaded brain's quant/context
+  don't match the loader profile ("eviction JIT-reload suspected").
+- **LM Studio auto-sizes context to leftover VRAM** on current builds
+  (requested 32768 → applied 32000 with f16 KV, 40448 with q8_0). HALO's
+  loader asserts `contextLength === 65536` exactly; if an LM Studio update
+  brings that behavior here, the assertion may start failing for this
+  reason rather than a real misconfiguration.
+
 **Port-discovered bugs, fixed or documented:** Mission Control's carveout
 math hardcoded 128 GiB (fixed — VRAM capacity now read from the driver
 registry, portable); the Models tab offered live Unload buttons on *remote*
