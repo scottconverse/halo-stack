@@ -1,0 +1,4 @@
+#!/bin/sh
+# Publication gate: this repo is public, so every push publishes.
+# Install: git config core.hooksPath .githooks
+exec powershell -NoProfile -File "$(git rev-parse --show-toplevel)/scripts/Check-Publication.ps1"
