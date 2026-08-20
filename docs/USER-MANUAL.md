@@ -565,48 +565,167 @@ is a hidden process; it dies with logoff/reboot, or leave it running — it idle
 
 ## Mission Control (the operator console)
 
-`http://127.0.0.1:3090` — six tabs behind a master alarm strip (**HARNESS ·
-MODELS · MEMORY · DISK · STREAM**). All green + "All systems nominal" means
-stop reading; any light names its cause and jumps to the right tab.
+`http://127.0.0.1:3090` — six tabs behind a master alarm strip. Every screen
+below is a real screenshot of this machine, not a mockup.
 
-- **Overview** — services + versions, what's running right now, memory pools
-  (Windows pool / GPU carveout / GPU **shared** — that last one should stay
-  near 0: model bytes in the shared pool is the leak that caused the Aug-16
-  OOM, and it alarms), delta-scan cadence, engine-drift detection, last
-  config validation, throughput vs bench baselines — and the full-width
-  **Machine vitals** timeline: the console's only view with a time axis.
-  GPU dedicated memory as an area with GPU **shared** stacked on top (a
-  healthy machine shows that band as a sliver; a growing one is the leak
-  developing), decode t/s on its own right-hand axis, hover for exact
-  values at any moment, and 1h / 6h / 24h / 7d ranges over the 60-second
-  history the stack has been recording since day one. Above it, six live
-  readouts: decode rate, GPU dedicated vs carveout, shared pool, Windows
-  free RAM, the fullest session's context, and how many models are
-  generating right now.
-- **Models** — the *entire* on-disk catalog (not just what's loaded) with
-  quant/size/max-context, TTL countdowns on loaded models, and per-model
-  Load (asks for context length) / Unload. Quick buttons for Brain/Worker
-  remain. Amber badge if anything is loaded at ≥200K context (the
-  silent-huge-context trap).
-- **Sessions** — real titles, tokens in/out, TTFT, decode t/s per session,
-  and a **Context** column showing exactly how full each session's window
-  is: the percentage, the token counts (used / window / remaining), amber
-  from 70% and red from 85%. That number predicts the output-token wall —
-  a reply can never exceed the room left, so a red session is one where a
-  large single emission will truncate. Dead drive-root-bug sessions are
-  hidden behind a toggle and badged when shown. Click a row for the full
-  ID and a cockpit link.
-- **Plugins** — all 166 config rows with **plain-language descriptions**
-  (mined from the harness's own package metadata on disk, not invented),
-  live search that matches descriptions too, and abnormal rows sorted to
-  the top in red.
-- **Memory** — the knowledge graph as an actual graph: force-directed
-  layout, nodes colored by entity type with a legend, relation edges,
-  wheel-zoom at the cursor, drag-pan, draggable nodes, click a node for
-  its observations and clickable connections, Refresh re-reads
-  `memory.json` live. (Origin story: first prototyped by the local brain
-  itself as a Creator-mode cockpit plugin —
-  `docs/experiments/creator-mode-2026-08-18.md`.)
+### The alarm strip — read this first, then stop
+
+![Mission Control Overview](images/mission-control-overview.png)
+
+The strip across the top carries **six watched signals**, and it is the only
+thing you have to read when you glance:
+
+| Light | Green means | It goes amber/red when |
+|---|---|---|
+| **HARNESS** | the cockpit is serving and every plugin fiber is healthy | :3080 is down, a plugin failed (Cordis never auto-retries a failed fiber), or one is stuck mid-transition >60 s |
+| **MODELS** | the loaded set is sane | the `lms` CLI is unreachable, nothing is loaded, something is loaded at ≥200K context, the live brain diverges from its loader profile (the eviction trap below), or a fleet model is competing for the GPU |
+| **RAM** | machine memory has headroom | Windows free RAM drops under 6 GiB, or model bytes leak into the GPU **shared** pool (the failure behind an August OOM) |
+| **CONTEXT** | no session is near its window limit | a session passes 70% (amber) or 85% (red) of its context window — past there a large reply silently truncates |
+| **DISK** | over 150 GB free | under 150 GB (amber) or 50 GB (red) — models are large |
+| **STREAM** | the harness event WebSocket is connected | the live job feed dropped |
+
+The banner reads **"Nominal on all six watched signals"** rather than "all
+systems nominal": it is a claim you can check, scoped to what is actually
+watched. When something is wrong the banner is replaced by the specific
+cause, and clicking any light jumps to the tab that explains it.
+
+**The state line** under the tabs answers "what is it doing right now" in one
+sentence — `IDLE · last inference 2h ago · qwen/qwen3.8-27b resident · ctx
+131,072`, or `WORKING · <model> generating · 2 sessions running`. It exists
+because a screen full of zeros next to a card showing a decode rate reads as
+broken data rather than as an idle machine.
+
+**Machine vitals** (the full-width panel) is the only view with a time axis.
+Three strips share one timeline, each auto-fitted to *its own* range so you
+see variation rather than a flat slab:
+
+- **GPU dedicated** — what the resident models occupy. Steps in this line are
+  model loads and unloads; the drop at 15:40 in the screenshot is the brain
+  reloading at the new 131,072 context.
+- **GPU shared** — the leak signal, with a red threshold line at the 8 GiB
+  alarm point. On a healthy machine this is a flat sliver. Growth here means
+  model bytes are spilling into Windows memory, which is what precedes an
+  out-of-memory stall.
+- **decode t/s** — felt speed. The line *breaks* across idle periods rather
+  than drawing a straight line through time when nothing ran.
+
+Hover anywhere for a crosshair and the exact values at that moment; the
+1h / 6h / 24h / 7d buttons re-read the 60-second history the stack has been
+recording since day one.
+
+### Overview cards
+
+- **Services** — cockpit, LM Studio API, and `lms` CLI with their ports. The
+  button is state-aware: "Open cockpit" while it is up, "Start cockpit" only
+  when it is down.
+- **Activity** — sessions today, tokens in/out, and the last run's decode and
+  TTFT against their bench baselines (amber when decode falls well below).
+- **Memory pools** — *proportions*: free RAM against total, percent of GPU
+  carveout used, and the shared pool against its alarm point. Bars colour
+  themselves at 80% and 95%, so a full gauge cannot look like an empty one.
+- **Cadence & drift** — when the weekly upstream `delta-scan` last ran and
+  when it is due, the selected inference engine, and the last config
+  validation result.
+- **Fleet (LM Link)** — the linked machines, which models each one holds, and
+  the resident pool with an origin badge per model. This is how you tell a
+  local model from one running on the other box.
+- **Disk** and **Knowledge graph** — free space, and how many entities the
+  local models have remembered against the 50-entity upgrade tripwire.
+
+### Models — the whole catalog, and what is actually resident
+
+![Mission Control Models tab](images/mission-control-models.png)
+
+The **slot line** at the top names the current occupant of each role —
+`Brain: qwen/qwen3.8-27b Q5_K_XL · ctx 131,072` / `Worker: empty` — so the
+"Load Brain" and "Load Worker" buttons have a visible target rather than
+being magic. Those buttons carry the quant they will load, read from the
+deployed loader script itself, so they cannot drift from reality.
+
+The table is the **entire on-disk catalog**, not just what is loaded, with
+resident models pinned to the top. Reading a row:
+
+- **Model** — display name plus its quantization, because two builds of the
+  same model would otherwise be indistinguishable rows. Non-chat entries
+  (embedding models, MTP draft heads, vision encoders, metadata shards) are
+  badged as components, so a 0.7 GB row does not read as corruption.
+- **State** — `idle`/`generating`, applied context, and the auto-unload TTL
+  in plain units (`TTL 23h 8m`). Amber badge if anything is loaded at ≥200K
+  context, the silent-huge-context trap.
+- **Origin** — `local`, or the fleet device it actually runs on. A model
+  running on another machine shows no Load/Unload controls and links to the
+  Fleet card instead: unloading it from here would kill it on *that* box,
+  and the server refuses the request even if something tries.
+- **Actions** — per-row Load (asks for a context length) and Unload. The
+  global **Unload Worker / Unload All** sit apart in red and confirm by
+  naming exactly which models they will evict and how much memory that frees.
+
+### Sessions — the output-token wall, made visible
+
+![Mission Control Sessions tab](images/mission-control-sessions.png)
+
+The header leads with risk: *"2 of 3 over 50% context"*, and rows sort by
+context risk so the session about to truncate is the first one you see.
+
+**The Context column is the point of this screen.** A reply can never be
+longer than the room left in its context window, and the harness *discards*
+a tool call that gets truncated — so a session near its limit fails silently
+on exactly the large outputs you care about. The column shows the percentage
+(muted under 50%, amber from 50%, red from 85%), then the headroom in tokens,
+then used-of-window. When a session goes amber, move large generation work to
+a fresh session — or hand it to the [budgeted-emit pipeline](#generating-large-artifacts--the-budgeted-emit-pipeline),
+which measures this same number before every chunk.
+
+TTFT and decode dim on idle sessions, where they are history rather than live
+readings. Sessions opened on a drive root are hidden by default behind a
+labelled toggle: they are a known rc.7 bug and cannot bind a workspace at all.
+
+### Plugins — finding the broken one
+
+![Mission Control Plugins tab](images/mission-control-plugins.png)
+
+166 configuration rows, each with a **plain-language description** mined from
+the harness's own package metadata on disk — not invented, and not the module
+path restated. The state counts across the top are **filters**: click
+`31 disabled` to see only those, `all` to come back. Problems sort to the top
+regardless, because a failure on row 140 of 166 may as well not be rendered.
+
+A failed fiber is always actionable: Cordis never auto-retries one, so it will
+stay failed until a config row changes. `waiting` is benign — it means the
+plugin is waiting on a dependency and will self-activate.
+
+### System — deep detail and the live log
+
+![Mission Control System tab](images/mission-control-system.png)
+
+RAM and GPU gauges (colour-graded, with the shared pool measured against its
+8 GiB alarm point), disk, exact version pins for every component, and a
+**Validate config** button that runs the harness's own `--dump-config` and
+reports unmatched patch rows.
+
+The **log tail** filters LM Studio's routine polling chatter by default —
+tens of thousands of authentication lines that bury every real event — and
+tells you how many it hid, with a "show raw" link. Lines colour by level, so
+an error does not carry the same weight as "listing models".
+### Memory — what the local models remember
+
+![Mission Control Memory tab](images/mission-control-memory.png)
+
+The knowledge graph as an actual graph: force-directed layout, nodes coloured
+by entity type with a legend, labelled relation edges with direction arrows.
+Wheel-zoom at the cursor, drag to pan, drag a node and its neighbours follow
+(the physics keeps running). Click any node to read its observations — the
+actual remembered facts — and its connections, each clickable.
+
+The palette deliberately contains **no red or amber**: those are the alarm
+channel everywhere else in this console, and spending them on a neutral
+entity type would leave nothing to signal a real problem with.
+
+Entities grow when a session writes to the graph — say *"remember this: …"*
+in the cockpit. The file is `~\.dsh\memory\memory.json`, snapshotted hourly
+by the **HALO Memory Snapshot** scheduled task, so a bad write is recoverable.
+(Origin story: this view was first prototyped by the local brain itself as a
+Creator-mode cockpit plugin — `docs/experiments/creator-mode-2026-08-18.md`.)
 
   **This graph ships in the repo — it is not a HALO-only tool.** It lives
   entirely inside `mission-control/mission-control.mjs` (in master since

@@ -3,6 +3,62 @@
 All notable changes to this repository are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-08-19
+
+Mission Control grew a time axis, learned to show risk, and then got taken
+apart by an adversarial design review and rebuilt. Documentation now shows
+the screens instead of describing them.
+
+### Added
+- **Machine vitals timeline** — the console's first view with a time axis,
+  spending the 60-second history the stack has recorded since day one.
+  Three auto-fitted strips share one timeline: GPU dedicated, GPU shared
+  against its 8 GiB leak threshold, and decode rate (broken across idle
+  periods rather than drawing a straight line through nothing). Hover
+  crosshair with exact values; 1h/6h/24h/7d ranges. New `/api/history`.
+- **Context fill, everywhere it matters** — the harness has always tracked
+  live context pressure and Mission Control was already fetching the block
+  that contains it. Now the Sessions tab leads with it (percentage, token
+  headroom, colour ramp from 50%), rows sort by it, and a **CONTEXT**
+  signal joins the alarm strip. This is the number that predicts the
+  output-token wall: a reply can never exceed the room left, and the
+  harness discards a tool call that truncates.
+- **Screenshots in the documentation** — the manual now shows each tab and
+  explains what every element means; the landing page carries the console
+  as evidence rather than description (`docs/images/`).
+
+### Changed
+- **Overview rebuilt** after the design review: a state line that reconciles
+  "zero sessions running" with "10.9 tok/s" (an idle machine used to read as
+  broken data), Today+Throughput merged into Activity, Memory pools switched
+  to proportions, and new Disk and Knowledge-graph cards filling what was an
+  empty grid cell.
+- **Severity moved onto values** across every tab — gauge bars colour by
+  proximity to their limit, plugin state counts became clickable filters
+  with problems sorted first, and the memory graph dropped red and amber
+  from its palette entirely (they are the alarm channel; an "infrastructure"
+  node rendered red spent the alarm colour on a neutral category).
+- **Clarity fixes**: model rows carry their quant so two builds of one model
+  are distinguishable; brain/worker buttons name their slot occupants;
+  destructive unloads confirm by naming what they evict and how much they
+  free; remote fleet models link to Fleet instead of dead-ending; TTL reads
+  `23h 8m` instead of `1429:57`; one ISO timestamp format; the log tail
+  hides tens of thousands of polling lines and colours by level; "MEMORY"
+  (machine RAM) no longer collides with the Memory tab (the model store).
+
+### Fixed
+- A Windows path in the memory-graph help text rendered as
+  `~.dshmemorymemory.json` — the page template ate its backslashes. The
+  design reviewer flagged it and it was **wrongly dismissed as a misread**;
+  it was real.
+- Mission Control now validates its own UI at boot: the inline script is
+  parsed and Windows paths are checked for lost backslashes, because a
+  syntax error there is invisible to `node --check` and ships a blank page
+  that still returns HTTP 200. That failure occurred twice during this work.
+- Loader-derived button labels were applied from the Overview renderer while
+  the buttons live on the Models tab, so they stayed unlabelled unless you
+  visited Overview first.
+
 ## [0.3.0] - 2026-08-19
 
 ### Added
