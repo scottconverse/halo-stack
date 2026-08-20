@@ -1391,7 +1391,12 @@ function renderOverview(s){
     '<div class="row" style="margin-top:8px"><span class="k">GPU carveout</span><span class="'+(gpuPct>=95?'v-bad':(gpuPct>=80?'v-warn':''))+'">'+(haveCarve?gpuPct+'% used of '+s.gpu.carveoutGiB+' GiB':'capacity unknown')+'</span></div>'+
     (haveCarve?'<div class="bar '+barCls(gpuPct)+'"><i style="width:'+gpuPct+'%"></i></div>':'')+
     '<div class="row" style="margin-top:8px"><span class="k">GPU shared</span><span class="'+sharedCls+'">'+s.gpu.sharedGiB+' GiB'+(sharedCls?' &mdash; leaking':'')+'</span></div>'+
-    '<div class="mut" style="margin-top:2px">shared should stay near 0 &mdash; model bytes belong in the carveout</div>';
+    // Measured 2026-08-19: ~1.2 GiB of this is llama-server's own Vulkan
+    // host-visible memory (staging buffers, host scratch) and ~0.4 GiB is the
+    // desktop compositor. That floor is normal and does NOT move when the
+    // context window changes - it is plumbing, not spilled weights. Saying
+    // "should be near 0" made the healthy state look like a fault.
+    '<div class="mut" style="margin-top:2px">a steady ~1.5 GiB here is normal (Vulkan staging buffers + desktop); watch for <em>growth</em> &mdash; that is model bytes spilling out of the carveout</div>';
 
   var due=s.memory;
   var dueTxt=due.dueDate?('due '+(due.dueInDays<0?('overdue '+Math.abs(due.dueInDays)+'d'):due.dueInDays+'d')):'no scan recorded';
@@ -1596,7 +1601,7 @@ function renderVitalsHead(){
   head.innerHTML=
     '<div class="vstat"><b>'+(last?last.decodeTps:'&mdash;')+'</b><span>decode t/s (last run)</span></div>'+
     '<div class="vstat"><b>'+s.gpu.dedicatedGiB+(s.gpu.carveoutGiB!=null?' <span class="mut" style="font-size:.62em">/ '+s.gpu.carveoutGiB+'</span>':'')+'</b><span>GPU dedicated GiB</span></div>'+
-    '<div class="vstat"><b class="'+sharedCls+'">'+s.gpu.sharedGiB+'</b><span>GPU shared GiB (want ~0)</span></div>'+
+    '<div class="vstat"><b class="'+sharedCls+'">'+s.gpu.sharedGiB+'</b><span title="~1.5 GiB is the normal floor: Vulkan staging buffers plus the desktop. Growth is the leak signal.">GPU shared GiB (flat ≈ healthy)</span></div>'+
     '<div class="vstat"><b class="'+freeCls+'">'+s.ram.freeGiB+'</b><span>Windows free GiB</span></div>'+
     '<div class="vstat"><b class="'+ctxCls+'">'+(worst?worst.worstPct+'%':'&mdash;')+'</b><span>fullest session context</span></div>'+
     '<div class="vstat"><b>'+gen+'</b><span>models generating now</span></div>';

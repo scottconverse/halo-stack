@@ -398,8 +398,26 @@ touched.
 **Memory pools are reported in GiB** (Windows pool / GPU carveout / GPU
 shared), including a shared-pool leak alarm: model bytes appearing in the
 GPU *shared* pool (rather than the dedicated carveout) is the failure mode
-that caused an out-of-memory incident on 2026-08-16, so that pool is
-alarmed if it doesn't stay near zero.
+that caused an out-of-memory incident on 2026-08-16.
+
+**What the shared pool normally holds** (measured 2026-08-19, per-process
+GPU counters, because "it should be near zero" is wrong and invites exactly
+this question): about **1.5 GiB is the healthy resting floor** — roughly
+1.2 GiB of it is `llama-server`'s own Vulkan host-visible memory (staging
+buffers for CPU↔GPU transfers and host-side scratch, allocated at model
+load) and about 0.4 GiB is the desktop compositor and browsers. It is
+plumbing between the CPU and the iGPU, not weights that failed to fit.
+
+Two measurements say it is not a spill: it held a median of 1.50 GiB across
+2,347 samples over 39 hours with a model resident throughout, and it barely
+moved when the context window was **doubled** from 65,536 to 131,072 (1.12 →
+1.60 GiB) while the dedicated carveout jumped 25.6 → 32.3 GiB. If the shared
+pool were carrying KV cache, doubling the window would have doubled it. The
+KV went where it belongs.
+
+So the signal to watch is **growth, not presence** — which is why the alarm
+threshold is 8 GiB rather than zero, and why the vitals strip draws this as
+a flat sliver whose *shape* is the tell.
 
 **Serves with `Cache-Control: no-store`** — deliberately, because the app
 ships inline in the same file it serves; a browser-cached copy would
