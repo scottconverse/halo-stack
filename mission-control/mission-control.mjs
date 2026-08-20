@@ -1103,7 +1103,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 <details class="mg-about" id="mg-about" open>
 <summary>About this graph</summary>
 <div class="mg-about-body">
-This is the harness's persistent knowledge graph (<span class="mono">~\.dsh\memory\memory.json</span>): what your local models remember across sessions. Nodes are entities (things the models chose to remember), colored by type. Edges are relations between them. Click a node to read its observations &mdash; the actual remembered facts.
+This is the harness's persistent knowledge graph (<span class="mono">~\\.dsh\\memory\\memory.json</span>): what your local models remember across sessions. Nodes are entities (things the models chose to remember), colored by type. Edges are relations between them. Click a node to read its observations &mdash; the actual remembered facts.
 <br><br>
 It grows when sessions write to it &mdash; say <span class="mono">&quot;remember this:&quot;</span> in the cockpit.
 <br>
@@ -2592,6 +2592,20 @@ const server = http.createServer(async (req, res) => {
 // is invisible to `node --check` and ships as a BLANK PAGE that still returns
 // HTTP 200. Twice now that has been an escaped quote eaten by the template
 // literal. Parse it at boot and refuse to pretend everything is fine.
+(function validatePageContent() {
+  // Windows paths written literally in this template literal lose their
+  // backslashes silently: `~\.dsh\memory\memory.json` renders as
+  // `~.dshmemorymemory.json`. It parses fine and looks like a typo to the
+  // reader, so nothing catches it - a design reviewer flagged exactly this
+  // and it was initially dismissed as a misread. Paths must be escaped (\\).
+  const mangled = PAGE.match(/~\.[A-Za-z][A-Za-z0-9.]{6,}/g);
+  if (mangled) {
+    console.error('FATAL: a Windows path lost its backslashes in the page template:');
+    [...new Set(mangled)].forEach(p => console.error('  ' + p + '   (write it as ~\\\\.dsh\\\\... in the source)'));
+    process.exit(1);
+  }
+})();
+
 (function validatePageScript() {
   const m = PAGE.match(/<script>([\s\S]*?)<\/script>/);
   if (!m) { console.error('FATAL: no inline script found in PAGE'); process.exit(1); }

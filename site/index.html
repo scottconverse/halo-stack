@@ -55,6 +55,10 @@ th{color:#fff;background:#122238;white-space:nowrap}td{color:#c6d5e6}
 .final h2{font-size:2.1rem}.final p{color:#c3d4e6;max-width:640px;margin:12px auto 28px}
 footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:.86rem;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 .scroll{overflow-x:auto}
+.shot{margin:26px 0 0;padding:0}
+.shot img{width:100%;display:block;border:1px solid var(--line);border-radius:14px;background:#071120}
+.shot figcaption{color:#bfcfe0;font-size:.92rem;margin-top:12px;max-width:820px}
+.shot figcaption b{color:#fff}
 .pill{display:inline-block;margin-left:10px;padding:3px 10px;border-radius:999px;border:1px solid var(--teal);color:var(--teal);font-size:.72rem;font-weight:800;letter-spacing:.08em;vertical-align:middle}
 @media(max-width:640px){.hero{padding:44px 0 36px}nav a{margin-left:14px}}
 </style>
@@ -64,11 +68,11 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
 
 <header>
   <div class="logo">HALO<span>·</span>STACK</div>
-  <nav><a href="#how">How it works</a><a href="#proof">Proof</a><a href="#cordis">Kernel</a><a href="#honest">Honesty</a><a href="https://github.com/scottconverse/halo-stack/blob/master/CHANGELOG.md">Changelog</a><a href="https://quartz-entry-ptf2.here.now/">Build log</a></nav>
+  <nav><a href="#how">How it works</a><a href="#console">Console</a><a href="#proof">Proof</a><a href="#cordis">Kernel</a><a href="#honest">Honesty</a><a href="https://github.com/scottconverse/halo-stack/blob/master/CHANGELOG.md">Changelog</a><a href="https://quartz-entry-ptf2.here.now/">Build log</a></nav>
 </header>
 
 <div class="hero">
-  <div class="kicker">100% local · one machine · every number measured<span class="pill">v0.3.0</span></div>
+  <div class="kicker">100% local · one machine · every number measured<span class="pill">v0.4.0</span></div>
   <h1>Frontier-class coding agents. No cloud required.</h1>
   <p class="sub">HALO is a fully local AI coding stack on a single AMD&nbsp;Strix&nbsp;Halo machine: a 27-billion-parameter brain, an on-demand MoE worker, a hardened agent cockpit with full-drive access, and a one-glance dashboard. Nothing on this page is a vendor claim — it was all benchmarked on the machine it runs on.</p>
   <div class="ctas">
@@ -128,6 +132,24 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
     </svg>
   </div>
   <p class="lede" style="margin-top:22px">The full architecture — source-level findings, config composition, compaction internals, permission model, and the reasoning behind every choice — is preserved in the <a href="https://quartz-entry-ptf2.here.now/">build log</a>, which also ships inside the repository as a historical document.</p>
+</section>
+
+<section id="console">
+  <h2>One screen that tells you the truth</h2>
+  <p class="lede">Mission Control is a single zero-dependency file — no framework, no CDN, works offline — serving six tabs behind an alarm strip. It reads the harness's own APIs rather than duplicating them, and every number on it comes off this machine. These are real screenshots, not mockups.</p>
+  <figure class="shot">
+    <img src="images/mission-control-overview.png" alt="Mission Control Overview: alarm strip with six signals, machine state line, service and memory cards, and a full-width vitals timeline" loading="lazy">
+    <figcaption><b>Overview.</b> Six watched signals across the top — and the banner says <em>“Nominal on all six watched signals”</em> rather than “all systems nominal”, because a claim you can check beats a blanket one. Below, the only view with a time axis: GPU memory, the shared-pool leak signal against its alarm threshold, and decode speed, each auto-scaled to its own range so you see movement instead of a flat slab. The step at 15:40 is the brain reloading at a 131,072-token context.</figcaption>
+  </figure>
+  <figure class="shot">
+    <img src="images/mission-control-sessions.png" alt="Mission Control Sessions tab showing per-session context fill with amber warnings and token headroom" loading="lazy">
+    <figcaption><b>Sessions.</b> The column that matters is <em>Context</em>. A model reply can never be longer than the room left in its window, and a truncated tool call is discarded outright — so a session near its limit fails silently on exactly the large outputs you care about. Rows sort by that risk, the header leads with it (<em>“2 of 3 over 50% context”</em>), and the headroom is stated in tokens rather than implied.</figcaption>
+  </figure>
+  <figure class="shot">
+    <img src="images/mission-control-memory.png" alt="Mission Control Memory tab showing the knowledge graph as a force-directed diagram with labelled relations" loading="lazy">
+    <figcaption><b>Memory.</b> What the local models remember across sessions and reboots, drawn as the graph it actually is — force-directed, labelled relations, click a node for the raw remembered facts. It reads the standard MCP memory-server format with no stack-specific fields, verified by pointing it at another machine's file.</figcaption>
+  </figure>
+  <p class="lede" style="margin-top:26px">Every screen here was rebuilt after an adversarial design review run by the local model itself — fresh context, no knowledge of who wrote the code — reviewing screenshots of each tab. It found a chart that rendered a leak signal at sub-pixel height, a risk column with no visual escalation, and a status banner claiming coverage it did not have. All of it is in the repository, findings and fixes both.</p>
 </section>
 
 <section id="proof">
