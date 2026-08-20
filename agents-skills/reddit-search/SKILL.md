@@ -29,6 +29,11 @@ Anonymous access allows roughly **10 requests/minute per IP**.
   (Mission Control's Sessions tab, or ask). If one is, **wait for it to finish**
   rather than interleaving. Two polite agents on one connection are one
   impolite client.
+- **Know when to stop.** Back-off is not unbounded: after **three consecutive
+  429s**, stop making Reddit requests entirely and report what you actually
+  collected. A task that spends twenty minutes asleep has already failed the
+  user - partial coverage delivered now beats complete coverage delivered
+  never. Say plainly which searches succeeded and which never ran.
 
 ## Procedure (pwsh + Invoke-RestMethod)
 Always send: `-Headers @{ "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) halo-stack-reader/1.0" }`
