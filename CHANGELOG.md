@@ -3,6 +3,58 @@
 All notable changes to this repository are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-08-20
+
+A deploy shipped one machine's instructions to another machine and an
+unrelated agent obeyed them. The machine-profile system can now carry prose
+files, the deploy refuses to ship an instruction file that doesn't say who it
+is for, and another machine's profile can finally be tested without deploying
+it.
+
+### Fixed
+
+- **A deployed `AGENTS.md` is a prompt, not a config file** (#35). The
+  machine profile covered settings, cordis, the launcher and the loaders but
+  not `workspace\AGENTS.md`, so the 5070Ti box's conversion deploy replaced
+  its scoped file with HALO's. That file lands in `~\Desktop\Code` — a
+  directory where other agent systems work and read `AGENTS.md` as their own
+  operating instructions. A running Codex fleet session consequently believed
+  it was on Strix Halo hardware, with model facts and an LM Studio endpoint
+  that did not exist on that machine.
+
+### Added
+
+- **`files:` in the machine-profile format** — whole-file swaps for prose,
+  which has no stable `find` string to line-replace against. `baseSha256`
+  pins the master file a machine copy was derived from: because a swap stops
+  the port box inheriting base improvements to that file, the deploy fails
+  and prints both hashes once master's version moves. A file may be swapped
+  or line-replaced, never both.
+- **Scope gate** — every deployed `AGENTS.md` must carry a `SCOPE:` line in
+  its first ten lines, on every machine including HALO. It reads the
+  *rendered* bytes, so it inspects exactly what will land live. On HALO the
+  header is harmless; on a shared box it is the difference between a config
+  file and a prompt injection into unrelated agents.
+- **`DEPLOY_DRYRUN=1`** — resolve the machine, render the profile, run the
+  scope gate, report every file that would be written and whether it changes,
+  then stop without touching anything live; the rendered copy is kept in
+  `%TEMP%` for inspection. Previously the only way to test `MACHINE=5070ti`
+  was to deploy 5070Ti config onto the live box, which is why that profile
+  shipped unvalidated and why #35 was found by a contaminated session rather
+  than by a test.
+- **`machines/files/5070ti/AGENTS.md`** — authored from current master rather
+  than the copy on `tester/5070ti`, which predates the fleet-origin,
+  output-wall and memory-graph sections. Machine-specific throughout: CUDA
+  hardware line, the 32,768 window in the output-wall physics, the sub-19K
+  worker ceiling, and inverted fleet-origin wording, since on that box the
+  unsuffixed identities are the remote ones.
+
+### Documentation
+
+- `machines/README.md` documents `files:`, the `baseSha256` rot guard, the
+  universal AGENTS.md scope rule, and how to validate another machine's
+  profile from HALO with `DEPLOY_DRYRUN=1`.
+
 ## [0.4.0] - 2026-08-19
 
 Mission Control grew a time axis, learned to show risk, and then got taken
