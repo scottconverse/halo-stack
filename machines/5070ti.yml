@@ -18,6 +18,17 @@ facts:
   memoryNote: one model resident at a time; eviction routine — JIT-reload alarm matters here
   workerNote: cap worker requests <19K ctx (instance crashes above; see issue #5)
   knownGap: Mission Control quick-action 'unload-worker' hardcodes the HALO worker identity
+files:
+  # Whole-file swap, not line-replacements (issue #35). AGENTS.md is prose that
+  # lands in ~\Desktop\Code where OTHER agents read it; there is no safe 'find'
+  # string, and the v0.2.0 conversion deploy proved a missed one contaminates a
+  # live Codex session. baseSha256 pins the master file this copy was derived
+  # from: if master's AGENTS.md moves, the deploy fails rather than silently
+  # shipping a 5070ti copy that missed the update.
+  - file: workspace\AGENTS.md
+    from: machines\files\5070ti\AGENTS.md
+    baseSha256: AC219637CFCD200DF435EA808D92A8D688D7B3F596EE58A7616DA7FA74CAA485
+
 replacements:
   # -- identity: suffix everywhere so LM Link federation cannot cross-resolve --
   - file: dsh\settings.yaml
