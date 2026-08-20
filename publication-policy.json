@@ -1,0 +1,38 @@
+{
+  "_comment": [
+    "Things the operator has ruled on for PUBLIC exposure. This repo is public;",
+    "everything in it is world-readable the moment it is pushed.",
+    "",
+    "Why this file exists: on 2026-08-19 the operator said a capability should",
+    "not be public. It was already public - added two days earlier - and the",
+    "response applied the instruction only to future work instead of auditing",
+    "what was already exposed, then pushed further improvements to it publicly.",
+    "A stated constraint must be checked against existing state, not just next",
+    "actions. This file is that check, made mechanical.",
+    "",
+    "status values:",
+    "  restricted  - must NOT be added to or modified in a public push. Blocks.",
+    "  published   - already public by explicit operator decision. Warns only.",
+    "",
+    "Add an entry the moment the operator calls something sensitive, BEFORE",
+    "doing anything else with it."
+  ],
+  "entries": [
+    {
+      "id": "reddit-rss-technique",
+      "patterns": ["agents-skills/reddit-search/**", "**/reddit-search/SKILL.md"],
+      "status": "published",
+      "decided": "2026-08-19",
+      "decision": "Operator reviewed and chose to leave it public: already exposed for 2 days and publicly discussed with 1000+ hits. Not a mistake to undo - a decision on record.",
+      "concern": "The value at risk is the operational discipline (dead paths, rate ceiling, pacing), not the RSS endpoints themselves. Someone could strip the politeness and degrade access for everyone using the technique."
+    },
+    {
+      "id": "credentials-and-keys",
+      "patterns": ["**/.env", "**/*.key", "**/*.pem", "**/credentials*.yaml", "**/.credentials*"],
+      "status": "restricted",
+      "decided": "2026-08-17",
+      "decision": "Never publish. dsh/dot-env.template is the published stand-in; the real .env is deploy-preserved and untracked.",
+      "concern": "Live API keys."
+    }
+  ]
+}
