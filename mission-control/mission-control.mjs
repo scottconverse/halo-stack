@@ -954,6 +954,16 @@ input[type=text],input[type=number]{background:#0c1620;border:1px solid var(--li
 .light{width:13px;height:13px;border-radius:50%;flex:none;box-shadow:0 0 6px 0 currentColor}
 .light.g{background:var(--green);color:var(--green)}.light.a{background:var(--amber);color:var(--amber)}.light.r{background:var(--red);color:var(--red)}
 .light-label{font-size:.78rem;color:var(--mut);letter-spacing:.03em}
+/* Slot occupancy, so "Load Brain" has a visible target instead of being magic. */
+/* Numeric columns line up for vertical comparison. */
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.lg-err{color:#ff9a9a}.lg-warn{color:var(--amber)}
+.slots{display:flex;flex-wrap:wrap;gap:18px;font-size:.82rem;margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid #1a2c42}
+.slot b{color:#9fc4e0;font-weight:600;margin-right:5px}
+/* Destructive controls read as destructive and sit apart from the safe ones. */
+.danger-cluster{margin-left:auto;display:inline-flex;gap:6px}
+button.danger{background:#2a1414;border-color:#7a3030;color:#ffb0b0}
+button.danger:hover{background:#3a1a1a}
 .pchip{display:inline-block;margin:0 5px 0 0;padding:2px 9px;border-radius:999px;border:1px solid var(--line);font-size:.78rem;color:var(--mut);cursor:pointer}
 .pchip:hover{border-color:#4a7799}
 .pchip.on{background:#1c5570;border-color:var(--teal);color:#fff}
@@ -1003,7 +1013,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 .mg-about .mg-about-body{color:var(--mut);font-size:.83rem;line-height:1.6}
 .mg-about .mg-about-body .mono{color:var(--teal)}
 </style></head><body>
-<h1>HALO Mission Control</h1><div class="sub">Reads native state every 5 s &middot; holds only trend/cadence state &middot; <span id="stamp"></span></div>
+<h1>HALO Mission Control</h1><div class="sub">Refreshes every 5 seconds &middot; updated <span id="stamp"></span></div>
 <div id="strip" class="strip"></div>
 <div id="actionMsg"></div>
 <nav class="tabs">
@@ -1042,11 +1052,14 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 
 <div id="tab-models" class="tabpanel">
 <div class="card">
+<div id="model-slots" class="slots"></div>
 <div class="filterbar">
 <button id="btn-load-brain" onclick="act('load-q5')">Load Brain</button>
 <button id="btn-load-worker" onclick="act('load-worker')">Load Worker</button>
-<button onclick="act('unload-worker')">Unload Worker</button>
-<button onclick="act('unload-all')">Unload All</button>
+<span class="danger-cluster">
+<button class="danger" onclick="act('unload-worker')">Unload Worker</button>
+<button class="danger" onclick="act('unload-all')">Unload All</button>
+</span>
 </div>
 <div id="models-table"></div>
 <div class="mut" id="models-footer" style="margin-top:8px"></div>
@@ -1056,8 +1069,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 <div id="tab-sessions" class="tabpanel">
 <div class="card">
 <div class="filterbar">
-<label class="mut"><input type="checkbox" id="showDriveRoot" onchange="loadSessions()"> show drive-root-bug rows</label>
-<span class="mut" id="sessions-agg"></span>
+<span id="sessions-agg"></span>
+<label class="mut toggle" title="Sessions opened on a drive root (C:\\) never bind their workspace — a known rc.7 bug. They are hidden because they cannot be used."><input type="checkbox" id="showDriveRoot" onchange="loadSessions()"> also show unusable drive-root sessions</label>
 </div>
 <div id="sessions-table"></div>
 </div>
@@ -1075,7 +1088,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
 
 <div id="tab-system" class="tabpanel">
 <div class="grid">
-<div class="card"><h2>Memory</h2><div id="sys-memory"></div></div>
+<div class="card"><h2>RAM &amp; GPU memory</h2><div id="sys-memory"></div></div>
 <div class="card"><h2>Disk C:</h2><div id="sys-disk"></div></div>
 <div class="card"><h2>Versions</h2><div id="sys-versions"></div></div>
 <div class="card"><h2>Config validation</h2>
@@ -1169,6 +1182,16 @@ window.addEventListener('hashchange', function(){ showTab((location.hash||'#over
 showTab((location.hash||'#overview').slice(1) || 'overview');
 
 async function act(a){
+  // Destructive globals name what they will destroy before doing it. One
+  // misclick used to evict every resident model with no confirm and no undo.
+  if(a==='unload-all'||a==='unload-worker'){
+    var loaded=(lastStatus&&lastStatus.models||[]).filter(function(m){return m.originKind==='local'});
+    var targets=a==='unload-all'?loaded:loaded.filter(function(m){return /coder/i.test(m.identifier)});
+    if(!targets.length){ document.getElementById('actionMsg').textContent='nothing to unload'; setTimeout(function(){document.getElementById('actionMsg').textContent=''},2500); return; }
+    var gb=targets.reduce(function(t,m){return t+(m.gb||0)},0);
+    var names=targets.map(function(m){return m.identifier}).join(', ');
+    if(!confirm('Unload '+targets.length+' model'+(targets.length>1?'s':'')+' and free about '+gb.toFixed(1)+' GB?\\n\\n'+names+'\\n\\nAny session using them will reload from disk on its next request.')) return;
+  }
   document.getElementById('actionMsg').textContent='running: '+a+'...';
   await fetch('/api/action/'+a,{method:'POST'});
   setTimeout(function(){document.getElementById('actionMsg').textContent='';refreshStatus();if(currentTab==='models')loadModels()},2500);
@@ -1233,6 +1256,8 @@ function computeLights(s){
   else if(s.gpu.sharedGiB>8) lights.MEMORY={level:'a',cause:'GPU shared usage '+s.gpu.sharedGiB+' GiB > 8 GiB (model bytes leaking into Windows pool)'};
   else if(s.ram.freeGiB<6) lights.MEMORY={level:'a',cause:'Windows free RAM '+s.ram.freeGiB+' GiB < 6 GiB'};
   else lights.MEMORY={level:'g',cause:null};
+  // "MEMORY" meant machine RAM here but the model store on the tab bar - four
+  // uses of one word. This light is about RAM; renamed at render time.
   // DISK
   if(!s.disk.ok) lights.DISK={level:'a',cause:'disk read failed'};
   else if(s.disk.freeGB<50) lights.DISK={level:'r',cause:'disk free '+s.disk.freeGB+' GB < 50 GB'};
@@ -1262,12 +1287,17 @@ function renderStrip(s){
     else if(lv==='a'&&worst==='a'&&!cause){cause=name+': '+lights[name].cause}
     if(lights[name].info&&!info) info=name+': '+lights[name].info;
   });
+  // Display names: "MEMORY" collided with the Memory tab (the model store)
+  // while meaning machine RAM. Say RAM.
+  var labelOf={MEMORY:'RAM'};
   var html=order.map(function(name){
     var l=lights[name];
-    return '<span class="light-item" onclick="location.hash=\\'#'+lightTab[name]+'\\'"><span class="light '+l.level+'"></span><span class="light-label">'+name+'</span></span>';
+    return '<span class="light-item" title="'+esc(l.cause||name+' nominal')+'" onclick="location.hash=\\'#'+lightTab[name]+'\\'"><span class="light '+l.level+'"></span><span class="light-label">'+(labelOf[name]||name)+'</span></span>';
   }).join('');
   var alarmCls=worst?' bad':(info?' info':'');
-  var alarmTxt=worst?cause:(info?info:'All systems nominal');
+  // Scope the reassurance to what is actually watched, so "nominal" is a
+  // checkable claim rather than a blanket one.
+  var alarmTxt=worst?cause:(info?info:'Nominal on all six watched signals');
   html+='<span class="alarm'+alarmCls+'">'+esc(alarmTxt)+'</span>';
   document.getElementById('strip').innerHTML=html;
 }
@@ -1278,10 +1308,26 @@ function renderStrip(s){
 // happened to visit Overview first - call this from the status poll instead,
 // which runs on every tab.
 function applyLoaderLabels(s){
-  if(!s||!s.loaders) return;
+  if(!s) return;
   var lb=document.getElementById('btn-load-brain'), lw=document.getElementById('btn-load-worker');
-  if(lb&&s.loaders.brain) lb.textContent='Load Brain ('+s.loaders.brain+')';
-  if(lw&&s.loaders.worker) lw.textContent='Load Worker ('+s.loaders.worker+')';
+  if(lb&&s.loaders&&s.loaders.brain) lb.textContent='Load Brain ('+s.loaders.brain+')';
+  if(lw&&s.loaders&&s.loaders.worker) lw.textContent='Load Worker ('+s.loaders.worker+')';
+  // "Brain" and "Worker" are slot names with no meaning on a screen that only
+  // shows a flat model list. Say who currently occupies each slot, so the
+  // button has a visible target instead of being magic.
+  var slots=document.getElementById('model-slots');
+  if(slots){
+    var local=(s.models||[]).filter(function(m){return m.originKind==='local'});
+    var brain=local.filter(function(m){return !/coder/i.test(m.identifier)})[0];
+    var worker=local.filter(function(m){return /coder/i.test(m.identifier)})[0];
+    var say=function(label,m){
+      return '<span class="slot"><b>'+label+'</b> '+(m
+        ? '<span class="mono">'+esc(m.identifier)+'</span> <span class="mut">'+(m.quant||'')+' &middot; ctx '+(m.context||0).toLocaleString()+'</span>'
+        : '<span class="mut">empty</span>')+'</span>';
+    };
+    slots.innerHTML=say('Brain:',brain)+say('Worker:',worker)+
+      '<span class="mut">resident '+local.length+' &middot; '+local.reduce(function(t,m){return t+(m.gb||0)},0).toFixed(1)+' GB</span>';
+  }
 }
 function renderOverview(s){
   lastStatus=s;
@@ -1583,23 +1629,35 @@ async function loadModels(){
       var actionCell=m.loaded?
         (m.originKind==='local'?
           '<button onclick="unloadModel('+i+')">Unload</button>'
-          : '<span class="mut" title="This model is running on another LM Link device. Unloading it from here would kill it on THAT machine — control it from its own device.">remote &mdash; no controls</span>')
+          : '<span class="mut" title="This model runs on another LM Link device. Unloading from here would kill it on THAT machine.">runs on '+esc(m.origin||'another device')+'<br><a href="#overview" onclick="showTab(&quot;overview&quot;)">see Fleet &rarr;</a></span>')
         : ('<button onclick="showLoadRow('+i+')">Load</button>'+
            '<span id="loadrow-'+i+'" style="display:none;gap:4px;align-items:center;margin-top:4px">'+
            '<input type="number" id="loadctx-'+i+'" value="32768">'+
            '<button onclick="loadModel('+i+')">Confirm</button></span>');
+      // Two rows titled "Qwen3.8 27B UD" read as a duplicate render, not as
+      // two heavy models resident at once. Fold the distinguishing quant into
+      // the title so a name can never fail to identify its row.
+      var title=esc(m.displayName)+(m.quant&&m.quant!=='?'?' <span class="mut">'+esc(m.quant)+'</span>':'');
+      // Not everything in this catalog is a chat model. Loading an embedding,
+      // an MTP draft head or a metadata shard is meaningless, and a 0 GB row
+      // otherwise reads as corruption.
+      var kind=/clip|vision/i.test(m.architecture||'')?'vision'
+        :/bert|embed/i.test((m.architecture||'')+m.modelKey)?'embedding'
+        :/assistant|mtp/i.test((m.architecture||'')+m.modelKey)?'draft head'
+        :(m.sizeGB===0?'metadata':null);
+      var kindBadge=kind?' <span class="badge badge-mut" title="not a chat model — a component used by another model">'+kind+'</span>':'';
       return '<tr>'+
-        '<td>'+esc(m.displayName)+ctxBadge+'<br><span class="mono mut">'+esc(m.modelKey)+'</span></td>'+
+        '<td>'+title+ctxBadge+kindBadge+'<br><span class="mono mut">'+esc(m.modelKey)+'</span></td>'+
         '<td>'+esc(m.architecture||'?')+' / '+esc(m.paramsString||'?')+'</td>'+
-        '<td>'+esc(m.quant)+'</td>'+
-        '<td>'+m.sizeGB+' GB</td>'+
-        '<td>'+fmtK(m.maxContextLength)+'</td>'+
+        '<td>'+(m.quant==='?'?'<span class="mut" title="LM Studio did not report a quantization for this file">unknown</span>':esc(m.quant))+'</td>'+
+        '<td class="num">'+m.sizeGB+' GB</td>'+
+        '<td class="num">'+fmtK(m.maxContextLength)+'</td>'+
         '<td>'+stateCell+'</td>'+
         '<td>'+originCell+'</td>'+
         '<td>'+actionCell+'</td>'+
         '</tr>';
     }).join('');
-    document.getElementById('models-table').innerHTML='<table class="tbl"><thead><tr><th>Model</th><th>Arch/Params</th><th>Quant</th><th>Size</th><th>Max ctx</th><th>State</th><th>Origin</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    document.getElementById('models-table').innerHTML='<table class="tbl"><thead><tr><th>Model</th><th>Arch/Params</th><th>Quant</th><th class="num">Size</th><th class="num">Max ctx</th><th>State</th><th>Origin</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table>';
     document.getElementById('models-footer').textContent='catalog: '+c.totalGB+' GB total \\u00b7 engine: '+(lastStatus&&lastStatus.services.engine||'unknown');
   }catch(e){ document.getElementById('models-table').innerHTML='<div class="mut">catalog fetch failed</div>' }
 }
@@ -1629,8 +1687,18 @@ async function loadSessions(){
   try{
     var showBug=document.getElementById('showDriveRoot').checked;
     var r=await (await fetch('/api/sessions?all=1')).json();
-    document.getElementById('sessions-agg').textContent='('+esc(r.source)+') sessions today: '+r.today.count+' \\u00b7 kTok in/out today: '+r.today.kTokIn+'K/'+r.today.kTokOut+'K';
     var list=r.sessions.filter(function(s){return showBug||!s.driveRootBug});
+    // Headline says what matters (how many sessions are near their limit),
+    // not which API answered. Sorted by risk so the one about to truncate is
+    // the first row, not a hunt through thirty.
+    list.sort(function(a,b){ return (b.ctxPct||-1)-(a.ctxPct||-1) || b.mtime-a.mtime; });
+    var atRisk=list.filter(function(s){return s.ctxPct!=null&&s.ctxPct>=50});
+    document.getElementById('sessions-agg').innerHTML=
+      r.today.count+' session'+(r.today.count===1?'':'s')+' today &middot; '+
+      (atRisk.length
+        ? '<span class="v-warn">'+atRisk.length+' of '+list.length+' over 50% context</span>'
+        : 'all sessions under 50% context')+
+      ' <span class="mut">&middot; '+r.today.kTokIn+'K in / '+r.today.kTokOut+'K out today &middot; sorted by context risk</span>';
     var rows=list.map(function(s,i){
       var bug=s.driveRootBug?' <span class="badge badge-red">drive-root bug</span>':'';
       var main='<tr class="clickable" onclick="toggleSessionDetail('+i+')">'+
@@ -1642,8 +1710,10 @@ async function loadSessions(){
         '<td>'+(s.kTokIn!=null?s.kTokIn+'K':'&mdash;')+'</td>'+
         '<td>'+(s.kTokOut!=null?s.kTokOut+'K':'&mdash;')+'</td>'+
         '<td>'+ctxCell(s)+'</td>'+
-        '<td>'+(s.ttftS!=null?s.ttftS+'s':'&mdash;')+'</td>'+
-        '<td>'+(s.decodeTps!=null?s.decodeTps:'&mdash;')+'</td>'+
+        // TTFT and decode describe a run in progress; on an idle session they
+        // are history, so they are dimmed rather than competing with context.
+        '<td class="'+(s.running?'':'mut')+'">'+(s.ttftS!=null?s.ttftS+'s':'&mdash;')+'</td>'+
+        '<td class="'+(s.running?'':'mut')+'">'+(s.decodeTps!=null?s.decodeTps+' <span class="mut" style="font-size:.75rem">tok/s</span>':'&mdash;')+'</td>'+
         '<td>'+fmtRel(s.mtime)+'</td>'+
         '</tr>';
       var detail='<tr id="sdetail-'+i+'" style="display:none"><td colspan="11"><div class="detail">'+
@@ -1654,7 +1724,7 @@ async function loadSessions(){
         '</div></td></tr>';
       return main+detail;
     }).join('');
-    document.getElementById('sessions-table').innerHTML='<table class="tbl"><thead><tr><th>Title</th><th>Workspace</th><th>Preset</th><th>State</th><th>Turns</th><th>kTok in</th><th>kTok out</th><th>Context</th><th>TTFT</th><th>Decode t/s</th><th>Updated</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    document.getElementById('sessions-table').innerHTML='<table class="tbl"><thead><tr><th>Title</th><th>Workspace</th><th>Preset</th><th>State</th><th>Turns</th><th title="cumulative tokens sent to the model">Tokens in</th><th title="cumulative tokens generated">Tokens out</th><th title="how full this session’s context window is — a full window truncates large replies">Context</th><th title="time to first token, last run">TTFT</th><th title="decode rate, last run">Decode</th><th>Updated</th></tr></thead><tbody>'+rows+'</tbody></table>';
   }catch(e){ document.getElementById('sessions-table').innerHTML='<div class="mut">sessions fetch failed</div>' }
 }
 function toggleSessionDetail(i){
@@ -1796,7 +1866,15 @@ async function loadLogtail(raw){
       '<div class="mut" style="margin-bottom:6px">'+esc(r.file)+
       (r.filtered?' &middot; '+r.dropped+' routine polling lines hidden <a href="#" onclick="loadLogtail(1);return false">show raw</a>':'')+
       '</div><pre style="white-space:pre-wrap;font-size:.78rem;max-height:400px;overflow:auto;margin:0">'+
-      (r.lines.length?esc(r.lines.join('\\n')):'no notable log lines &mdash; only routine polling')+'</pre>';
+      (r.lines.length
+        // An ERROR line used to carry exactly the same visual weight as
+        // "listing models". Level decides colour.
+        ? r.lines.map(function(l){
+            var cls=/\\b(ERROR|FATAL|failed|exception)\\b/i.test(l)?'lg-err'
+                   :/\\b(WARN|WARNING)\\b/i.test(l)?'lg-warn':'';
+            return cls?'<span class="'+cls+'">'+esc(l)+'</span>':esc(l);
+          }).join('\\n')
+        : 'no notable log lines &mdash; only routine polling')+'</pre>';
   }catch(e){ document.getElementById('sys-logtail').innerHTML='<div class="mut">log tail failed</div>' }
 }
 
@@ -1811,7 +1889,12 @@ async function loadLogtail(raw){
 // position set directly) while the simulation keeps running around it, so
 // spring forces visibly pull connected neighbors along and the network
 // re-settles on release.
-var MG_PALETTE=['#4fd8c4','#5fe39a','#ffc86b','#ff8080','#7fa8d9','#c58fe6','#f08fc0','#a8d95f','#5fb8e3','#e3a55f','#8fe3c8','#e35f8f'];
+// Entity-type hues only. Red and amber are deliberately absent: they are the
+// alarm channel everywhere else in this console, and spending them on a
+// neutral category (an "infrastructure" node rendered red) leaves nothing to
+// signal an actual problem with. Adjacent hues are also kept far enough apart
+// that two types cannot be confused at a glance.
+var MG_PALETTE=['#4fd8c4','#7fa8d9','#c58fe6','#5fe39a','#5fb8e3','#a8d95f','#8fe3c8','#b9a7f0','#6fd0a8','#9fc4e0','#8fd6e3','#c0d98f'];
 function mgHashStr(s){ s=String(s||''); var h=0; for(var i=0;i<s.length;i++){ h=((h<<5)-h+s.charCodeAt(i))|0; } return Math.abs(h); }
 function mgColorFor(entityType){ return MG_PALETTE[mgHashStr(entityType)%MG_PALETTE.length]; }
 
