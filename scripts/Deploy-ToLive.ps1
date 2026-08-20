@@ -11,6 +11,15 @@ $repo = Split-Path $PSScriptRoot -Parent
 $U = $env:USERPROFILE
 $dshPkg = "@deepseek-ai/dsh@0.1.0-rc.7"
 
+# DEPLOY_DRYRUN=1 runs machine resolution, profile render and the scope gate,
+# reports what WOULD be written, and stops before touching anything live. This
+# is how another machine's profile gets validated from HALO: without it the
+# only way to test MACHINE=5070ti was to actually deploy 5070ti config onto the
+# live box, so the 5070ti profile shipped unvalidated -- and issue #35 (HALO's
+# AGENTS.md landing on the 5070ti box) was the bill for that.
+$dryRun = $env:DEPLOY_DRYRUN -eq '1'
+if ($dryRun) { Write-Host "== DRY RUN == nothing live will be touched.`n" -ForegroundColor Yellow }
+
 $map = @(
     @{ src = "dsh\settings.yaml";                dst = "$U\.dsh\settings.yaml" }
     @{ src = "dsh\cordis.patch.yml";             dst = "$U\.dsh\cordis.patch.yml" }
@@ -171,6 +180,34 @@ if ($machine -ne 'halo') {
         New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
         Copy-Item $source $target -Force
     }
+    # Whole-file swaps (issue #35). Line-replacements are the wrong tool for a
+    # prose file like AGENTS.md: there is no stable 'find' string, and a missed
+    # one silently ships HALO's instructions to another box. A `files:` entry
+    # replaces the deployed file outright with a machine-authored copy.
+    #
+    # The rot guard is a hash instead of a find-string: `baseSha256` records the
+    # base file this machine copy was derived from. If master's version moves,
+    # the deploy FAILS -- otherwise the port box would silently stop inheriting
+    # every base improvement to that file, which is the same silent-rot failure
+    # the find-must-exist rule prevents for replacements.
+    foreach ($f in @($machineProfile.files)) {
+        $target = Join-Path $renderRoot $f.file
+        if (-not (Test-Path $target)) { Write-Error "Profile file swap targets '$($f.file)' which is not a deployed file. Nothing live touched."; exit 1 }
+        if (@($machineProfile.replacements) | Where-Object { $_.file -eq $f.file }) {
+            Write-Error "machines\$machine.yml both swaps and line-replaces '$($f.file)'. Pick one. Nothing live touched."
+            exit 1
+        }
+        $from = Join-Path $repo $f.from
+        if (-not (Test-Path $from)) { Write-Error "Profile file swap source missing: $($f.from). Nothing live touched."; exit 1 }
+        if ($f.baseSha256) {
+            $baseHash = (Get-FileHash -Algorithm SHA256 (Join-Path $repo $f.file)).Hash
+            if ($baseHash -ne $f.baseSha256.ToUpper()) {
+                Write-Error "Base file '$($f.file)' has changed since machines\$machine.yml pinned it (baseSha256 $($f.baseSha256), now $baseHash). The machine copy '$($f.from)' is stale and would drop the base updates. Refresh it, then update baseSha256. Nothing live touched."
+                exit 1
+            }
+        }
+        Copy-Item $from $target -Force
+    }
     foreach ($r in @($machineProfile.replacements)) {
         $target = Join-Path $renderRoot $r.file
         if (-not (Test-Path $target)) { Write-Error "Profile replacement targets '$($r.file)' which is not a deployed file. Nothing live touched."; exit 1 }
@@ -181,10 +218,47 @@ if ($machine -ne 'halo') {
         }
         Set-Content -Path $target -Value ($text.Replace($r.find, $r.replace)) -NoNewline -Encoding utf8
     }
-    Write-Host "  rendered $((@($machineProfile.replacements)).Count) replacement(s) for '$machine' into a deploy copy"
+    Write-Host "  rendered $((@($machineProfile.replacements)).Count) replacement(s) and $((@($machineProfile.files)).Count) file swap(s) for '$machine' into a deploy copy"
     $srcRoot = $renderRoot
 } else {
     Write-Host "machine profile: halo (base) - repo files deploy byte-for-byte"
+}
+
+Write-Host "`n== stage: scope gate (AGENTS.md is a prompt, not a config) =="
+# Issue #35, found live on the 5070ti box: AGENTS.md deploys into
+# ~\Desktop\Code, a directory OTHER agents work in (Codex fleet sessions read
+# AGENTS.md as operating instructions). A HALO-flavoured AGENTS.md landing
+# there is not a stale config file -- it is a prompt injection into unrelated
+# agents, and it told a live Codex session it was running on Strix Halo with
+# model facts and endpoints that did not exist.
+#
+# Every deployed AGENTS.md must therefore declare its own scope up front, on
+# EVERY machine including HALO. This gate runs against the rendered source, so
+# it sees exactly the bytes that are about to be written live.
+foreach ($m in $map) {
+    if ((Split-Path $m.src -Leaf) -ne 'AGENTS.md') { continue }
+    $agentsSrc = Join-Path $srcRoot $m.src
+    if (-not (Test-Path $agentsSrc)) { continue }
+    $head = (Get-Content $agentsSrc -TotalCount 10) -join "`n"
+    if ($head -notmatch '(?m)^SCOPE:') {
+        Write-Error "$($m.src) has no SCOPE: declaration in its first 10 lines. It deploys to $($m.dst), a shared directory -- without a scope header it reads as instructions to every agent working there (issue #35). Nothing live touched."
+        exit 1
+    }
+    Write-Host "  $($m.src): SCOPE declared -> safe to land in $($m.dst)"
+}
+
+if ($dryRun) {
+    Write-Host "`n== DRY RUN: files that WOULD be written =="
+    foreach ($m in $map) {
+        $source = Join-Path $srcRoot $m.src
+        if (-not (Test-Path $source)) { continue }
+        if ($m.skipIfExists -and (Test-Path $m.dst)) { Write-Host "  skip (exists)  $($m.dst)"; continue }
+        $same = (Test-Path $m.dst) -and ((Get-FileHash $source).Hash -eq (Get-FileHash $m.dst).Hash)
+        Write-Host ("  {0,-8} {1}" -f $(if ($same) { 'same' } else { 'CHANGE' }), $m.dst)
+    }
+    if ($renderRoot) { Write-Host "`nRendered deploy copy kept for inspection: $renderRoot" }
+    Write-Host "`nDRY RUN complete - nothing live was touched."
+    exit 0
 }
 
 Write-Host "`n== stage: drift guard (live edits not yet synced?) =="
