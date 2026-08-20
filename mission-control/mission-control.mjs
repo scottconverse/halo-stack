@@ -954,6 +954,10 @@ input[type=text],input[type=number]{background:#0c1620;border:1px solid var(--li
 .light{width:13px;height:13px;border-radius:50%;flex:none;box-shadow:0 0 6px 0 currentColor}
 .light.g{background:var(--green);color:var(--green)}.light.a{background:var(--amber);color:var(--amber)}.light.r{background:var(--red);color:var(--red)}
 .light-label{font-size:.78rem;color:var(--mut);letter-spacing:.03em}
+.pchip{display:inline-block;margin:0 5px 0 0;padding:2px 9px;border-radius:999px;border:1px solid var(--line);font-size:.78rem;color:var(--mut);cursor:pointer}
+.pchip:hover{border-color:#4a7799}
+.pchip.on{background:#1c5570;border-color:var(--teal);color:#fff}
+.pchip.bad{border-color:#7a3030;color:#ff9a9a}.pchip.warn{border-color:#7a6030;color:var(--amber)}.pchip.ok{border-color:#2f6a4a;color:#8fe3b4}
 .alarm{flex:1 1 260px;font-size:.85rem;color:var(--mut);text-align:right}
 .alarm.bad{color:var(--amber)}
 .alarm.info{color:var(--teal)}
@@ -1234,14 +1238,22 @@ function computeLights(s){
   else if(s.disk.freeGB<50) lights.DISK={level:'r',cause:'disk free '+s.disk.freeGB+' GB < 50 GB'};
   else if(s.disk.freeGB<150) lights.DISK={level:'a',cause:'disk free '+s.disk.freeGB+' GB < 150 GB'};
   else lights.DISK={level:'g',cause:null};
+  // CONTEXT — the strip claimed "all systems nominal" while a session sat at
+  // 95% of its window, i.e. one large reply away from silent truncation. The
+  // banner must cover what the Sessions tab actually watches.
+  var cp=s.contextPressure;
+  if(!cp) lights.CONTEXT={level:'g',cause:null};
+  else if(cp.worstPct>=85) lights.CONTEXT={level:'r',cause:'session "'+cp.worstTitle+'" at '+cp.worstPct+'% of its context window — a large reply will truncate; start a fresh session for big work'};
+  else if(cp.worstPct>=70) lights.CONTEXT={level:'a',cause:'session "'+cp.worstTitle+'" at '+cp.worstPct+'% of its context window'};
+  else lights.CONTEXT={level:'g',cause:null};
   // STREAM
   lights.STREAM=s.jobs.streamConnected?{level:'g',cause:null}:{level:'a',cause:'events WebSocket disconnected'};
   return lights;
 }
-var lightTab={HARNESS:'overview',MODELS:'models',MEMORY:'system',DISK:'system',STREAM:'overview'};
+var lightTab={HARNESS:'overview',MODELS:'models',MEMORY:'system',DISK:'system',CONTEXT:'sessions',STREAM:'overview'};
 function renderStrip(s){
   var lights=computeLights(s);
-  var order=['HARNESS','MODELS','MEMORY','DISK','STREAM'];
+  var order=['HARNESS','MODELS','MEMORY','CONTEXT','DISK','STREAM'];
   var worst=null, cause=null, info=null;
   order.forEach(function(name){
     var lv=lights[name].level;
@@ -1321,14 +1333,17 @@ function renderOverview(s){
   var haveCarve=s.gpu.carveoutGiB!=null;
   var gpuPct=haveCarve?Math.min(100,Math.round(s.gpu.dedicatedGiB/s.gpu.carveoutGiB*100)):0;
   var sharedCls=s.gpu.sharedGiB>8?'v-bad':(s.gpu.sharedGiB>3?'v-warn':'');
+  // A 95%-full bar used to look identical to a 40% one - colour by proximity
+  // to the limit so the gauge itself carries the warning.
+  var barCls=function(pct){return pct>=95?'red':(pct>=80?'amber':'')};
   var freeCls=s.ram.freeGiB<6?'v-bad':(s.ram.freeGiB<12?'v-warn':'');
   // Proportion lives here; the vitals strip owns the trend and the raw
   // current levels, so this card shows capacity relationships only.
   document.getElementById('ov-pools').innerHTML=
     '<div class="row"><span class="k">Windows pool</span><span class="'+freeCls+'">'+s.ram.freeGiB+' GiB free of '+s.ram.totalGiB+'</span></div>'+
-    '<div class="bar"><i style="width:'+winPct+'%"></i></div>'+
-    '<div class="row" style="margin-top:8px"><span class="k">GPU carveout</span><span>'+(haveCarve?gpuPct+'% used of '+s.gpu.carveoutGiB+' GiB':'capacity unknown')+'</span></div>'+
-    (haveCarve?'<div class="bar"><i style="width:'+gpuPct+'%"></i></div>':'')+
+    '<div class="bar '+barCls(winPct)+'"><i style="width:'+winPct+'%"></i></div>'+
+    '<div class="row" style="margin-top:8px"><span class="k">GPU carveout</span><span class="'+(gpuPct>=95?'v-bad':(gpuPct>=80?'v-warn':''))+'">'+(haveCarve?gpuPct+'% used of '+s.gpu.carveoutGiB+' GiB':'capacity unknown')+'</span></div>'+
+    (haveCarve?'<div class="bar '+barCls(gpuPct)+'"><i style="width:'+gpuPct+'%"></i></div>':'')+
     '<div class="row" style="margin-top:8px"><span class="k">GPU shared</span><span class="'+sharedCls+'">'+s.gpu.sharedGiB+' GiB'+(sharedCls?' &mdash; leaking':'')+'</span></div>'+
     '<div class="mut" style="margin-top:2px">shared should stay near 0 &mdash; model bytes belong in the carveout</div>';
 
@@ -1596,18 +1611,19 @@ var openSession=null;
 // large single emission cannot fit no matter what maxTokens says.
 function ctxCell(s){
   if(s.ctxPct==null) return '<span class="mut">&mdash;</span>';
-  var cls=s.ctxPct>=85?'badge-red':(s.ctxPct>=70?'badge-amber':'badge-mut');
+  // The ramp starts at 50, not 70: by the time a window is 70% full a large
+  // emission already may not fit, so the warning has to arrive earlier. The
+  // percent is the dominant figure; counts are the supporting line.
+  var cls=s.ctxPct>=85?'badge-red':(s.ctxPct>=50?'badge-amber':'badge-mut');
   // NB: this whole UI script lives inside a template literal, which eats one
   // level of backslash — an escaped apostrophe here silently ends the string
   // and breaks the page. Use double quotes, never \\' in this file.
-  var title=s.ctxPct>=70?"large single emissions may not fit; start a fresh session for big generations":"context used of this session's window";
-  // Numbers stay VISIBLE, not hidden behind a hover: the token counts are the
-  // point, the percentage is just the fast read.
-  return '<span class="badge '+cls+'" title="'+title+'">'+s.ctxPct+'%</span>'+
-    '<div class="mut mono" style="font-size:.76rem;margin-top:3px">'+
-      s.ctxUsed.toLocaleString()+' / '+s.ctxWindow.toLocaleString()+
-    '</div>'+
-    '<div class="mut" style="font-size:.72rem">'+(s.ctxWindow-s.ctxUsed).toLocaleString()+' left</div>';
+  var title=s.ctxPct>=50?"large single emissions may not fit; start a fresh session for big generations":"context used of this session's window";
+  var big=s.ctxPct>=50?'font-size:1.25rem;font-weight:700':'font-size:1.05rem;font-weight:600';
+  var col=s.ctxPct>=85?'color:var(--red)':(s.ctxPct>=50?'color:var(--amber)':'color:var(--mut)');
+  return '<div style="'+big+';'+col+'" title="'+title+'">'+s.ctxPct+'%</div>'+
+    '<div class="mut mono" style="font-size:.75rem">'+(s.ctxWindow-s.ctxUsed).toLocaleString()+' left</div>'+
+    '<div class="mut mono" style="font-size:.7rem;opacity:.75">'+s.ctxUsed.toLocaleString()+' / '+s.ctxWindow.toLocaleString()+'</div>';
 }
 async function loadSessions(){
   try{
@@ -1647,7 +1663,8 @@ function toggleSessionDetail(i){
 }
 
 // ── plugins tab ──
-var pluginsData=null;
+var pluginsData=null, pluginBucket=null;
+function setPluginBucket(b){ pluginBucket=b||null; renderPlugins(); }
 async function loadPlugins(){
   try{
     pluginsData=await (await fetch('/api/plugins')).json();
@@ -1659,17 +1676,32 @@ function renderPlugins(){
   if(pluginsData.error){ document.getElementById('plugins-table').innerHTML='<div class="mut">dsh down &mdash; no inventory</div>'; return }
   var filter=(document.getElementById('pluginFilter').value||'').toLowerCase();
   var rows=pluginsData.entries.filter(function(e){
+    if(pluginBucket){
+      if(pluginBucket==='stuck'){ if(!e.stuck) return false; }
+      else if(e.bucket!==pluginBucket) return false;
+    }
     if(!filter) return true;
     return (e.entryId||'').toLowerCase().indexOf(filter)>=0 || (e.moduleName||'').toLowerCase().indexOf(filter)>=0 || (e.fiberPhase||'').toLowerCase().indexOf(filter)>=0 || (e.description||'').toLowerCase().indexOf(filter)>=0;
   });
+  // A wall of 135 identical green rows hid the 31 that were not active. The
+  // counts are now the filter: click a state to see only those rows.
   var sm=pluginsData.summary;
-  var sumParts=[sm.active+' active', sm.disabled+' disabled'];
-  if(sm.waiting>0) sumParts.push(sm.waiting+' waiting');
-  if(sm.transitioning>0) sumParts.push(sm.transitioning+' transitioning');
-  if(sm.failed>0) sumParts.push(sm.failed+' failed');
-  if(sm.stuck>0) sumParts.push(sm.stuck+' stuck');
-  sumParts.push(sm.total+' total');
-  document.getElementById('plugins-summary').textContent=sumParts.join(' \\u00b7 ');
+  var chip=function(n,label,cls){
+    if(!n) return '';
+    return '<span class="pchip '+(cls||'')+(pluginBucket===label?' on':'')+'" onclick="setPluginBucket(&quot;'+label+'&quot;)">'+n+' '+label+'</span>';
+  };
+  document.getElementById('plugins-summary').innerHTML=
+    chip(sm.failed,'failed','bad')+chip(sm.stuck,'stuck','bad')+
+    chip(sm.transitioning,'transitioning','warn')+chip(sm.waiting,'waiting','warn')+
+    chip(sm.disabled,'disabled')+chip(sm.active,'active','ok')+
+    '<span class="pchip'+(pluginBucket===null?' on':'')+'" onclick="setPluginBucket(&quot;&quot;)">'+sm.total+' all</span>';
+  // Problems first: a failure on row 140 of 166 may as well not be rendered.
+  var rank={failed:0,transitioning:1,waiting:2,disabled:3,active:4};
+  rows=rows.slice().sort(function(a,b){
+    var ra=(a.stuck?0:rank[a.bucket]!=null?rank[a.bucket]:9);
+    var rb=(b.stuck?0:rank[b.bucket]!=null?rank[b.bucket]:9);
+    return ra-rb || String(a.entryId).localeCompare(String(b.entryId));
+  });
   var html=rows.map(function(e){
     var state, stateColor='', tip='';
     if(e.bucket==='failed'){ state='<span class="dot down"></span>failed'; stateColor=' style="color:var(--red)"'; }
@@ -1684,15 +1716,19 @@ function renderPlugins(){
     }
     else if(e.bucket==='active'){ state='<span class="dot up"></span>active'; }
     else { state='<span class="dot"></span>disabled'; stateColor=' style="color:var(--mut)"'; }
+    // fiberPhase repeated the state on every row. Show it only when it says
+    // something the state does not.
+    var phase=(e.fiberPhase||'').toLowerCase();
+    var phaseExtra=(phase&&phase!==e.bucket&&phase!=='active')?' <span class="mut">('+esc(e.fiberPhase)+')</span>':'';
     return '<tr'+tip+'>'+
       '<td class="mono">'+esc(e.entryId)+(e.haloOverride?' <span class="badge badge-teal">HALO override</span>':'')+'</td>'+
-      '<td'+stateColor+'>'+state+(e.bucket==='waiting'?' <span class="mut">(waiting on dependency &mdash; will self-activate)</span>':'')+'</td>'+
-      '<td>'+esc(e.fiberPhase||'—')+'</td>'+
+      '<td'+stateColor+'>'+state+phaseExtra+(e.bucket==='waiting'?' <span class="mut">(waiting on dependency &mdash; will self-activate)</span>':'')+'</td>'+
       '<td class="mono mut">'+esc(e.moduleName||'—')+'</td>'+
-      '<td class="mut" style="max-width:360px;white-space:normal">'+esc(e.description||'—')+'</td>'+
+      '<td class="mut" style="max-width:420px;white-space:normal">'+esc(e.description||'—')+'</td>'+
       '</tr>';
   }).join('');
-  document.getElementById('plugins-table').innerHTML='<table class="tbl"><thead><tr><th>entryId</th><th>state</th><th>fiberPhase</th><th>module</th><th>description</th></tr></thead><tbody>'+html+'</tbody></table>';
+  document.getElementById('plugins-table').innerHTML='<table class="tbl"><thead><tr><th>entryId</th><th>state</th><th>module</th><th>what it does</th></tr></thead><tbody>'+html+'</tbody></table>'+
+    '<div class="mut" style="margin-top:6px">showing '+rows.length+' of '+pluginsData.entries.length+' rows</div>';
 }
 
 // ── system tab ──
@@ -1701,10 +1737,14 @@ function renderSystem(s){
   var haveCarve=s.gpu.carveoutGiB!=null;
   var gpuPct=haveCarve?Math.min(100,Math.round(s.gpu.dedicatedGiB/s.gpu.carveoutGiB*100)):0;
   var sharedCls=s.gpu.sharedGiB>8?'amber':'';
+  // Bars carry the warning themselves; a full gauge used to look exactly like
+  // an empty one. Shared-pool bar is scaled against its 8 GiB alarm point so
+  // the sliver has a stated denominator instead of floating unanchored.
+  var bc=function(pct){return pct>=95?'red':(pct>=80?'amber':'')};
   document.getElementById('sys-memory').innerHTML=
-    '<div class="row"><span class="k">Windows pool</span><span>'+s.ram.usedGiB+' / '+s.ram.totalGiB+' GiB</span></div><div class="bar"><i style="width:'+winPct+'%"></i></div>'+
-    '<div class="row" style="margin-top:10px"><span class="k">GPU carveout</span><span>'+s.gpu.dedicatedGiB+(haveCarve?' / '+s.gpu.carveoutGiB+' GiB':' GiB (capacity unknown)')+'</span></div>'+(haveCarve?'<div class="bar"><i style="width:'+gpuPct+'%"></i></div>':'')+
-    '<div class="row" style="margin-top:10px"><span class="k">GPU shared</span><span'+(sharedCls?' style="color:var(--amber)"':'')+'>'+s.gpu.sharedGiB+' GiB</span></div><div class="bar '+sharedCls+'"><i style="width:'+Math.min(100,s.gpu.sharedGiB/8*100)+'%"></i></div>'+
+    '<div class="row"><span class="k">Windows pool</span><span class="'+(winPct>=95?'v-bad':(winPct>=80?'v-warn':''))+'">'+s.ram.usedGiB+' / '+s.ram.totalGiB+' GiB</span></div><div class="bar '+bc(winPct)+'"><i style="width:'+winPct+'%"></i></div>'+
+    '<div class="row" style="margin-top:10px"><span class="k">GPU carveout</span><span class="'+(gpuPct>=95?'v-bad':(gpuPct>=80?'v-warn':''))+'">'+s.gpu.dedicatedGiB+(haveCarve?' / '+s.gpu.carveoutGiB+' GiB':' GiB (capacity unknown)')+'</span></div>'+(haveCarve?'<div class="bar '+bc(gpuPct)+'"><i style="width:'+gpuPct+'%"></i></div>':'')+
+    '<div class="row" style="margin-top:10px"><span class="k">GPU shared</span><span'+(sharedCls?' style="color:var(--amber)"':'')+'>'+s.gpu.sharedGiB+' / 8 GiB alarm</span></div><div class="bar '+sharedCls+'"><i style="width:'+Math.min(100,s.gpu.sharedGiB/8*100)+'%"></i></div>'+
     '<div class="mut" style="margin-top:6px">'+(haveCarve?'GPU capacity from driver registry (portable across boxes)':'machine total: '+s.machineTotalRamGiB+' GiB unified')+'</div>';
   var diskPct=s.disk.ok?Math.round(s.disk.usedGB/s.disk.totalGB*100):0;
   var diskCls=!s.disk.ok?'':(s.disk.freeGB<50?'red':(s.disk.freeGB<150?'amber':''));
