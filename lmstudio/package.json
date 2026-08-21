@@ -1,0 +1,9 @@
+{
+  "name": "halo-lmstudio-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Pins the LM Studio SDK the loader scripts import. Deploy-ToLive.ps1 installs this into ~/.lmstudio/scripts. Before 2026-08-21 the loaders imported a vendored SDK that was never committed, so every clone failed with MODULE_NOT_FOUND.",
+  "dependencies": {
+    "@lmstudio/sdk": "1.5.0"
+  }
+}

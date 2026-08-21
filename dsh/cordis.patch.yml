@@ -51,4 +51,4 @@
         command: npx
         args: ['-y', '@modelcontextprotocol/server-memory']
         env:
-          MEMORY_FILE_PATH: 'C:\Users\scott\.dsh\memory\memory.json'
+          MEMORY_FILE_PATH: !!js "process.env.USERPROFILE + '/.dsh/memory/memory.json'"

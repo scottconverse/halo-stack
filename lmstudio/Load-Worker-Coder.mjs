@@ -1,7 +1,18 @@
-import { LMStudioClient } from "./vendor/node_modules/@lmstudio/sdk/dist/index.mjs";
-
 // On-demand MoE worker for harness fan-out (v2 plan, Phase 2 verdict).
 // TTL 2h: loads in ~1 min when needed, returns ~16 GB when idle.
+//
+// 2026-08-21: same two defects as the brain loader, fixed the same way.
+// (1) This imported ./vendor/node_modules/@lmstudio/sdk, a directory that was
+//     never in the repository, so every clone failed with MODULE_NOT_FOUND.
+//     Now the stock public SDK, pinned and installed by Deploy-ToLive.ps1.
+// (2) Public 1.5.0 silently drops maxParallelPredictions, and its
+//     getLoadConfig() returns a shape whose fields all read undefined -- so
+//     the old assert on line 32 would throw and unload a model that had
+//     loaded correctly. Wire-level injection below; verification from
+//     `lms ps --json`, the stack's own truth source.
+import { LMStudioClient } from "@lmstudio/sdk";
+import { execSync } from "node:child_process";
+
 const modelPath = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_S.gguf";
 const modelId = "qwen3-coder-30b-a3b-instruct";
 const client = new LMStudioClient();
@@ -12,7 +23,20 @@ for (const model of await client.llm.listLoaded()) {
   }
 }
 
-const model = await client.llm.load(modelPath, {
+// Fields the published SDK accepts and then discards. Keep in sync with the
+// `config` block below.
+const proto = Object.getPrototypeOf(client.llm);
+const origMap = proto.loadConfigToKVConfig;
+proto.loadConfigToKVConfig = function (cfg) {
+  const kv = origMap.call(this, cfg);
+  kv.fields.push(
+    { key: "llm.load.numParallelSessions", value: 1 },
+    { key: "load.gpuStrictVramCap", value: true },
+  );
+  return kv;
+};
+
+await client.llm.load(modelPath, {
   identifier: modelId,
   ttl: 7200,
   verbose: "info",
@@ -28,9 +52,23 @@ const model = await client.llm.load(modelPath, {
   },
 });
 
-const config = await model.getLoadConfig();
-if (config.contextLength !== 32768) {
-  await client.llm.unload(model.identifier);
-  throw new Error(`Worker load profile mismatch: contextLength=${config.contextLength}`);
+// deviceIdentifier must be null: on an LM Link federated LM Studio another box
+// can publish this same identity and satisfy a naive check.
+const ps = JSON.parse(execSync("lms ps --json").toString());
+const live = ps.find((m) => m.identifier === modelId && !m.deviceIdentifier);
+const checks = {
+  loadedLocally: !!live,
+  contextLength: live?.contextLength === 32768,
+  parallel: live?.parallel === 1,
+};
+const bad = Object.entries(checks).filter(([, ok]) => !ok);
+if (bad.length > 0) {
+  if (live) await client.llm.unload(modelId);
+  throw new Error(`Worker load profile mismatch: ${JSON.stringify({ bad, live }, null, 2)}`);
 }
-console.log(JSON.stringify({ identifier: model.identifier, path: model.path, contextLength: config.contextLength }));
+console.log(JSON.stringify({
+  identifier: modelId,
+  path: live.path,
+  contextLength: live.contextLength,
+  parallel: live.parallel,
+}));
