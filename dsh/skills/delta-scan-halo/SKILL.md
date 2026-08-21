@@ -1,6 +1,6 @@
 ---
 name: delta-scan-halo
-description: Audit the HALO stack's upstream for changes worth acting on — harness releases past rc.7, fixes to the five known Windows bugs, new Qwen models and unsloth quants that fit this machine, llama.cpp engine changes, and community findings for Strix Halo. Produces a delta report with ACTIONABLE/WATCH/IGNORE verdicts and tracks scan state in the memory graph. Run weekly or on demand in a fresh session.
+description: Audit the HALO stack's upstream for changes worth acting on — harness releases past the current pin (0.1.1-rc.2), fixes to the five known Windows bugs, new Qwen models and unsloth quants that fit this machine, llama.cpp engine changes, and community findings for Strix Halo. Produces a delta report with ACTIONABLE/WATCH/IGNORE verdicts and tracks scan state in the memory graph. Run weekly or on demand in a fresh session.
 user-invocable: true
 ---
 
@@ -26,10 +26,10 @@ observations follow after it.
 ## Stack context (baseline — do not re-derive)
 - Machine: Windows 11, AMD Strix Halo ("HALO"), ~256 GB/s memory bandwidth,
   64 GB system / 64 GB VGM split.
-- Cockpit: DeepSeek Harness `dsh` pinned **0.1.0-rc.7** (released 2026-08-17;
+- Cockpit: DeepSeek Harness `dsh` pinned **0.1.1-rc.2** (migrated 2026-08-21 from 0.1.0-rc.7;
   repo deepseek-ai/deepseek-harness), Web UI :3080, preset halo-standard,
   Standard mode, full-drive access.
-- Known rc.7 Windows bugs to check for upstream fixes: (1) BrowserMCP
+- Known Windows bugs (verified on rc.7; re-verification vs 0.1.1-rc.2 pending) to check for upstream fixes: (1) BrowserMCP
   boot-crash on free port 9009, (2) drive-root workspaces never bind,
   (3) blank workspace titles unclickable, (4) npm .ps1 shims need `cmd /c`
   for the ACP provider, (5) subagent provider plugins are per-profile installs.
@@ -47,7 +47,7 @@ observations follow after it.
 Structured feeds first (pwsh + Invoke-RestMethod, exact endpoints, all verified
 reachable from this machine):
 1. dsh releases/tags: https://api.github.com/repos/deepseek-ai/deepseek-harness/releases?per_page=5
-   and /tags?per_page=5 — anything newer than dsh-v0.1.0-rc.7? Read notes for
+   and /tags?per_page=5 — anything newer than dsh-v0.1.1-rc.2? Read notes for
    fixes to the five known bugs.
 2. dsh plugin ecosystem: https://api.github.com/search/repositories?q=topic:dsh-plugin&sort=updated&per_page=10
    — new/updated plugins for browser control, memory, search, or Windows fixes.
@@ -75,7 +75,7 @@ reddit.com content — a licensing hole — and Jina's reader is blocked by Redd
 ## Delta criteria
 - Report only items newer than the last scan date from `halo-monitor-state`
   (baseline run: everything notable).
-- ACTIONABLE = fixes one of the five known bugs; a dsh release past rc.7 with
+- ACTIONABLE = fixes one of the five known bugs; a dsh release past the current pin (0.1.1-rc.2) with
   Windows fixes; a quant/model likely to beat current bench numbers at
   equal-or-smaller size; a security issue in anything we run.
 - Memory-layer upgrade watch (assessed 2026-08-17): current stock MCP graph

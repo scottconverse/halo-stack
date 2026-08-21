@@ -6,7 +6,7 @@ $map = @(
     # dsh config surface
     @{ src = "$U\.dsh\settings.yaml";                dst = "dsh\settings.yaml" }
     @{ src = "$U\.dsh\cordis.patch.yml";             dst = "dsh\cordis.patch.yml" }
-    # NOTE: $U\.dsh\.env is deliberately NOT synced — it now holds real API keys.
+    # NOTE: $U\.dsh\.env is deliberately NOT synced - it now holds real API keys.
     # The repo carries dsh\dot-env.template instead; Deploy writes it only if
     # no live .env exists.
     @{ src = "$U\.dsh\Start-DSH.ps1";                dst = "dsh\Start-DSH.ps1" }
@@ -20,7 +20,7 @@ $map = @(
     @{ src = "$U\.dsh\memory\Snapshot-Memory.ps1";      dst = "dsh\memory\Snapshot-Memory.ps1" }
     # Harness skills
     @{ src = "$U\.dsh\skills\delta-scan-halo\SKILL.md"; dst = "dsh\skills\delta-scan-halo\SKILL.md" }
-    # Shared-root skills (~\.agents\skills — visible to Claude Code AND the harness)
+    # Shared-root skills (~\.agents\skills - visible to Claude Code AND the harness)
     @{ src = "$U\.agents\skills\reddit-search\SKILL.md"; dst = "agents-skills\reddit-search\SKILL.md" }
     # Workspace instruction file (auto-loaded by dsh into every session)
     @{ src = "$U\Desktop\Code\AGENTS.md"; dst = "workspace\AGENTS.md" }
@@ -46,8 +46,9 @@ foreach ($m in $map) {
 }
 Write-Host "`nValidating composed config (dsh --dump-config; watch for 'unmatched' warnings)..."
 $env:DSH_PERMISSION_MODE = 'danger-full-access'
-$dump = npx "@deepseek-ai/dsh@0.1.0-rc.7" web --dump-config 2>&1
-$warnings = $dump | Select-String -Pattern "warn|unmatched"
+# MIGRATION 2026-08-21: pnpm dlx, not npx (npm resolver hangs on Node 25).
+$dump = pnpm dlx "@deepseek-ai/dsh@0.1.1-rc.2" web --dump-config 2>&1
+$warnings = $dump | Select-String -Pattern "warn|unmatched|not found|error"
 if ($warnings) { Write-Warning "CONFIG WARNINGS:"; $warnings | ForEach-Object { Write-Warning $_.Line } }
 else { Write-Host "config composes clean - no unmatched patch targets" }
 

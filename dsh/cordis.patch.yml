@@ -27,7 +27,14 @@
 # failure (five subagents, three dead on idle timeout, one that never received
 # a token), reachable without the workflow tool ever being called.
 # The workflow engine has its own cap in the preset; this closes the other door.
-- id: jobs-local
+# GATE-2026-08-21 / PE-M1: the id is `jobs`, NOT `jobs-local`. The base plugin
+# composes as `- id: jobs / name: '@deepseek-ai/dsh-jobs-local'` -- the PACKAGE
+# is dsh-jobs-local but the cordis ENTRY id is `jobs`. The earlier `jobs-local`
+# id matched nothing: dump-config emitted `patch: entry "jobs-local" not found`
+# and this cap NEVER ATTACHED on rc.7 or 0.1.1 -- the exact background-job door
+# to the 2026-08-20 fan-out failure was open the whole time, and every
+# validation gate missed it because dsh says "not found", not "warn"/"error".
+- id: jobs
   config:
     maxConcurrentJobsPerOwner: 1
 

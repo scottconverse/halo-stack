@@ -49,12 +49,30 @@ New-Item -ItemType Directory -Force -Path $dshHome, "$dshHome\logs" | Out-Null
 "=== launch $(Get-Date -Format o) ===" | Out-File -FilePath $log -Encoding utf8
 
 $mutex = $null
+$script:dsh = $null
 function Release-Mutex {
     if ($script:mutex) { try { $script:mutex.ReleaseMutex() } catch { }; $script:mutex.Dispose(); $script:mutex = $null }
+}
+# PE-M2 (gate 2026-08-21): a failed launch used to abandon the pnpm dlx tree
+# still running in the background (a half-finished cold install, or a wedged
+# server), leaving the NEXT launch to clean it up -- so a slow first pull could
+# fail twice before succeeding. Kill the launcher process and its whole tree on
+# any loud failure. The tree is pnpm.mjs -> cmd -> node server; killing the
+# launcher PID plus any dsh-web children by the same pattern used for stale
+# cleanup leaves nothing behind.
+function Stop-DshTree {
+    if (-not $script:dsh) { return }
+    try {
+        $kids = @(Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='cmd.exe'" -ErrorAction SilentlyContinue |
+                  Where-Object { $_.CommandLine -and $_.CommandLine -match '(deepseek-ai(/|\\)dsh|\bdsh\b.{0,8}web)' -and $_.CommandLine -notmatch '(--dump-config|\bplugin\b)' })
+        foreach ($k in $kids) { Stop-Process -Id $k.ProcessId -Force -ErrorAction SilentlyContinue }
+        if (-not $script:dsh.HasExited) { Stop-Process -Id $script:dsh.Id -Force -ErrorAction SilentlyContinue }
+    } catch { }
 }
 function Fail-Loud([string]$message) {
     $message | Add-Content $log
     "Server output (if any): $serverLog" | Add-Content $log
+    Stop-DshTree
     Release-Mutex
     Start-Process notepad $log
     exit 1
@@ -84,7 +102,13 @@ function Test-CockpitServing {
 }
 
 Require-Command 'node' 'Install Node 22+ (README step 1) and reopen the shortcut.'
-Require-Command 'npx'  'It ships with Node. Reinstall Node 22+ (README step 1).'
+# MIGRATION 2026-08-21: the stack installs/runs dsh via `pnpm dlx`, not `npx`.
+# npm 11's dependency resolver hangs indefinitely on this Node 25 box for every
+# dsh version past rc.7 (measured: rc.8 and 0.1.1-rc.2 both never complete,
+# --dry-run included, so it is resolution not build); pnpm's resolver installs
+# the same graph in ~50s. dsh's own docs require Node ^22.19 || >=24, and this
+# box runs 25 -- so pnpm is the supported install path here, not a workaround.
+Require-Command 'pnpm' 'Install pnpm 11 (README step 1: "npm i -g pnpm"). The stack runs dsh via "pnpm dlx" because npm''s resolver hangs on this Node version.'
 Require-Command 'lms'  'Install LM Studio, then run its CLI bootstrap so "lms" is on PATH (README step 1).'
 
 # 1) LM Studio server up, and actually answering.
@@ -131,12 +155,22 @@ if (-not (Test-BrainLoaded)) {
 if (Test-CockpitServing) {
     "cockpit already serving on :3080 - reusing it" | Add-Content $log
 } else {
-    # Items 10/11: match BOTH the node server and the cmd.exe running npx.cmd.
-    # Only kill what is genuinely dead: a process listening on some other port
-    # is a deliberate second instance and is left alone.
-    $pattern = 'deepseek-ai(/|\\)dsh'
+    # Items 10/11 (+ MIGRATION): the pnpm dlx process tree has three parts --
+    # the `pnpm.mjs dlx @deepseek-ai/dsh@... web` launcher, a `cmd /c dsh web`
+    # wrapper, and the `...@deepseek-ai\dsh\...\lib\bin.js web` server. The
+    # launcher and server both carry "@deepseek-ai/dsh" + "web"; the cmd wrapper
+    # carries only "dsh" + "web". Match all three so no orphan survives, and
+    # still leave alone anything genuinely serving on another port (a deliberate
+    # second instance).
+    $pattern = '(deepseek-ai(/|\\)dsh.*\bweb\b)|(\bdsh\b.*\bweb\b.*(dlx|bin\.js|pnpm))|(\bdsh\b.{0,8}web)'
+    # PE-3 (gate 2026-08-21): a deploy validates by running
+    # `pnpm dlx @deepseek-ai/dsh@... web --dump-config` and installs plugins via
+    # `... plugin ... add` -- both carry "@deepseek-ai/dsh"+"web" and would be
+    # force-killed by this sweep if a launch raced a deploy. They serve no port,
+    # so the port-guard below does not save them. Exclude those transient
+    # non-server invocations explicitly.
     $candidates = @(Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='cmd.exe'" -ErrorAction SilentlyContinue |
-                    Where-Object { $_.CommandLine -and $_.CommandLine -match $pattern -and $_.CommandLine -match '\bweb\b' })
+                    Where-Object { $_.CommandLine -and $_.CommandLine -match $pattern -and $_.CommandLine -notmatch '(--dump-config|\bplugin\b)' })
     foreach ($c in $candidates) {
         $ports = @(Get-NetTCPConnection -State Listen -OwningProcess $c.ProcessId -ErrorAction SilentlyContinue)
         $otherPort = @($ports | Where-Object { $_.LocalPort -ne 3080 })
@@ -165,10 +199,18 @@ if (Test-CockpitServing) {
     # Item 5/9: capture output, to a per-run file so concurrent or successive
     # launches cannot overwrite the evidence. Two files: PowerShell refuses to
     # redirect stdout and stderr to one path.
-    $dsh = Start-Process -PassThru -WindowStyle Hidden npx.cmd `
-        -ArgumentList '"@deepseek-ai/dsh@0.1.0-rc.7"','web' `
+    # MIGRATION: `pnpm dlx` (not npx) - see the pnpm Require-Command above.
+    # pnpm.cmd, NOT bare `pnpm`: on Windows `Get-Command pnpm` resolves to
+    # pnpm.ps1 (a script), and Start-Process cannot launch a .ps1 as a process
+    # -- it returns a blank PID and nothing serves. The batch shim pnpm.cmd is
+    # the launchable entry, exactly as the old code used npx.cmd.
+    # --no-open: dsh opens the browser itself on start; suppress it so THIS
+    # launcher stays the one that opens the browser LAST, only after the serving
+    # check passes (otherwise a browser pops on a not-yet-ready or dead server).
+    $script:dsh = Start-Process -PassThru -WindowStyle Hidden pnpm.cmd `
+        -ArgumentList 'dlx','"@deepseek-ai/dsh@0.1.1-rc.2"','web','--no-open' `
         -RedirectStandardOutput $serverLog -RedirectStandardError $serverErr
-    "server launched, wrapper PID $($dsh.Id); output -> $serverLog" | Add-Content $log
+    "server launched via pnpm dlx, launcher PID $($dsh.Id); output -> $serverLog" | Add-Content $log
 
     function Dump-ServerOutput {
         foreach ($f in @($serverErr, $serverLog)) {
@@ -179,16 +221,18 @@ if (Test-CockpitServing) {
         }
     }
 
-    # 180s covers a cold npx download on a slow connection.
+    # 300s covers a cold pnpm dlx download (first run of a new version pulls
+    # ~190 packages; ~50s warm, longer cold on a slow connection).
     $serving = $false
-    $deadline = (Get-Date).AddSeconds(180)
+    $deadline = (Get-Date).AddSeconds(300)
     do {
         Start-Sleep -Seconds 3
-        # NOTE: $dsh is the cmd.exe wrapper around npx.cmd, not the node server
-        # (verified). Its exit is a useful early signal but not proof either
-        # way, so serving is always decided by the HTTP check below.
+        # NOTE: $dsh is the pnpm.cmd launcher process (pnpm.mjs), which spawns a cmd
+        # wrapper and then the node server (verified: pnpm.mjs -> cmd -> bin.js).
+        # Its exit is an early signal but not proof either way, so serving is
+        # always decided by the HTTP check below.
         if ($dsh.HasExited -and -not (Test-CockpitServing)) {
-            "LAUNCH WRAPPER EXITED (code $($dsh.ExitCode)) and nothing is serving." | Add-Content $log
+            "PNPM LAUNCHER EXITED (code $($dsh.ExitCode)) and nothing is serving." | Add-Content $log
             Dump-ServerOutput
             Fail-Loud "Startup aborted: the harness never came up. Output captured above."
         }
@@ -197,7 +241,7 @@ if (Test-CockpitServing) {
 
     if (-not $serving) {
         $listening = [bool](Get-NetTCPConnection -LocalPort 3080 -State Listen -ErrorAction SilentlyContinue)
-        "DSH NEVER SERVED after 180s. Port 3080 listening: $listening" | Add-Content $log
+        "DSH NEVER SERVED after 300s. Port 3080 listening: $listening" | Add-Content $log
         if ($listening) { "  Port is held but the page does not answer - wedged server (known rc.7 defect with sessions >1MB), or a different app owns 3080." | Add-Content $log }
         Dump-ServerOutput
         Fail-Loud "Startup failed. Not opening a browser at a dead port."

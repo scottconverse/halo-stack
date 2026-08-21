@@ -9,6 +9,22 @@ Master is ahead of the newest tagged release below. These changes are merged
 but not yet cut into a version — they include fixes to defects that the tagged
 releases shipped with. Do not read the 0.5.0 entry as the state of the tree.
 
+### Changed
+- **Harness upgraded `0.1.0-rc.7` → `0.1.1-rc.2`, installed via `pnpm dlx` (not
+  `npx`).** npm 11's dependency resolver hangs indefinitely on this box's Node
+  version for every dsh release past rc.7 — `npm install` never completes,
+  `--dry-run` included, so it is resolution, not a build script. pnpm's resolver
+  installs the same graph in ~50 s and `pnpm dlx … web` serves a working cockpit.
+  Every install/run path (launcher, deploy validation, sync, Mission Control's
+  validate-config) now uses pnpm. Two Windows-specific gotchas handled: the
+  launcher starts `pnpm.cmd` (bare `pnpm` resolves to `pnpm.ps1`, which
+  `Start-Process` cannot launch), and Mission Control runs pnpm's `.mjs` entry
+  via node (Node's `execFile` refuses to spawn a `.cmd` shell-free — the
+  CVE-2024-27980 hardening — and shell:true is barred here as the RCE surface).
+  Verified live: deploy validation gate green, launcher cold-starts and serves
+  0.1.1-rc.2, reuse path spawns nothing, 172 plugins compose with 0 failures and
+  all subagent providers active. Tests MIG1/MIG2/MIG3 guard the mechanism.
+
 ### Fixed
 - **The repository could not load a model on any machine but the author's.**
   The loader scripts imported a vendored `@lmstudio/sdk` that was never
