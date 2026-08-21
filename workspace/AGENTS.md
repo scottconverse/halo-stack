@@ -7,7 +7,8 @@ a Codex fleet session, a Claude Code session), ignore this file.
 You are running inside the HALO stack: DeepSeek Harness (pinned 0.1.0-rc.7) on
 Windows 11 / AMD Strix Halo, brain = Qwen3.8-27B Q5 via LM Studio at :1234,
 on-demand MoE worker, full-drive access. The stack's complete documentation,
-configs, and measured benchmarks live in `C:\Users\scott\Desktop\Code\halo-stack`
+configs, and measured benchmarks live in the `halo-stack` repository inside
+this workspace
 (public: github.com/scottconverse/halo-stack). Read its docs before re-deriving
 anything about this machine.
 

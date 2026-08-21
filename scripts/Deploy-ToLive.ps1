@@ -11,6 +11,24 @@ $repo = Split-Path $PSScriptRoot -Parent
 $U = $env:USERPROFILE
 $dshPkg = "@deepseek-ai/dsh@0.1.0-rc.7"
 
+# Prerequisites, named. Without this a missing Node surfaced 200 lines later as
+# "No js-yaml install found", sending a newcomer after a third-party YAML
+# library instead of the actual missing item -- which is step 1 of the README.
+# Command-discovery failures cannot be captured by 2>$null or *>>, so they have
+# to be checked by name rather than caught.
+$prereqs = @(
+    @{ name = 'node'; why = 'Install Node 22+ (README step 1).' }
+    @{ name = 'npm';  why = 'It ships with Node. Reinstall Node 22+ (README step 1).' }
+    @{ name = 'npx';  why = 'It ships with Node. Reinstall Node 22+ (README step 1).' }
+    @{ name = 'lms';  why = 'Install LM Studio, then put its CLI on PATH (README step 1: "lms bootstrap"). The launcher and both model loaders shell out to it.' }
+)
+$missing = @($prereqs | Where-Object { -not (Get-Command $_.name -ErrorAction SilentlyContinue) })
+if ($missing.Count -gt 0) {
+    foreach ($m in $missing) { Write-Host "MISSING PREREQUISITE: '$($m.name)' is not on PATH. $($m.why)" -ForegroundColor Red }
+    Write-Error "Deploy aborted before touching anything: $($missing.Count) prerequisite(s) missing."
+    exit 1
+}
+
 # DEPLOY_DRYRUN=1 runs machine resolution, profile render and the scope gate,
 # reports what WOULD be written, and stops before touching anything live. This
 # is how another machine's profile gets validated from HALO: without it the

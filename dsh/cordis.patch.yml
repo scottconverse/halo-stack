@@ -18,6 +18,19 @@
         command: cmd
         args: ['/c', 'opencode', 'acp']   # npm shim is .ps1/.cmd — needs cmd /c on Windows
 
+# ONE DECODE LANE PER MACHINE (2026-08-21).
+# jobs-local caps background work per owning agent at 10 by default. The
+# halo-standard preset runs `subagent` with backgroundMode: continuable, so a
+# single turn could start ten background children against a brain that serves
+# maxParallelPredictions=1. They do not run in parallel -- they queue, and each
+# one's stream idle timer runs down while it waits. That is the 2026-08-20
+# failure (five subagents, three dead on idle timeout, one that never received
+# a token), reachable without the workflow tool ever being called.
+# The workflow engine has its own cap in the preset; this closes the other door.
+- id: jobs-local
+  config:
+    maxConcurrentJobsPerOwner: 1
+
 # Built-in DeepSeek cloud search: no API key on this machine; Exa MCP serves search instead.
 - id: web-search-deepseek
   disabled: true

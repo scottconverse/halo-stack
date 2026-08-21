@@ -13,6 +13,16 @@ llm-pi-ai:
       # (one session burned 2.4M input tokens on a single turn). Raised to cover
       # worst-case prefill of a nearly-full 131,072 window.
       streamIdleTimeoutMs: 1200000
+      # The idle timeout above makes the retry storm RARER. This bounds it.
+      # Omitting retryPolicy resolves to normal mode with FIVE retries, and a
+      # retry re-prefills the entire context from scratch -- at 131,072 tokens
+      # that is minutes of GPU per attempt. The 2026-08-20 failure logged 13
+      # identical "pi-ai stream idle timeout" retries and consumed 2,396,400
+      # input tokens on ONE turn. Lengthening the timeout on 2026-08-20 (PR #41)
+      # treated the symptom and left this at its default; that was incomplete.
+      retryPolicy:
+        mode: normal
+        maxRetries: 1
       compat:
         thinkingFormat: qwen
         supportsReasoningEffort: true
@@ -76,4 +86,8 @@ compaction-basic:
   thresholdRatio: 0.75
   retainRatio: 0.5
   maxTokens: 12288
-  compactionRetries: 2
+  # Left at the default 1. Raised to 2 on 2026-08-20 with no justification;
+  # with retain at 0.5 the first pass lands near 50% and cannot re-cross a 0.75
+  # threshold, so extra attempts cannot help -- they only license another ~18
+  # minutes of treadmill if something else is wrong.
+  compactionRetries: 1

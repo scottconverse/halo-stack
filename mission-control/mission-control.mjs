@@ -34,6 +34,11 @@ const LOADER_Q5 = path.join(HOME, '.lmstudio', 'scripts', 'Load-OpenCode-Qwen.mj
 const LOADER_WORKER = path.join(HOME, '.lmstudio', 'scripts', 'Load-Worker-Coder.mjs');
 const START_DSH = path.join(HOME, '.dsh', 'Start-DSH.ps1');
 const DSH_VERSION_PIN = '0.1.0-rc.7';
+// A session that claims to be running but whose durable log has not advanced
+// in this long is STALLED, whatever the harness's own flag says. Five minutes
+// is well past a slow first token at depth (measured worst case 403s) so a
+// healthy deep prefill is not mislabelled.
+const STALL_MS = 5 * 60 * 1000;
 // GPU carveout sizing must work on ANY box this deploys to (the 5070 Ti port
 // exposed a hardcoded-128-GiB defect: "14.9 / 96.4 GiB carveout" on a 16 GiB
 // discrete card). Primary source: the display driver's own VRAM capacity from
@@ -420,7 +425,20 @@ async function listSessionsApi(limit = 50) {
         title: v.title || null,
         goal: v.goal || null,
         mtime: s.updatedAt || 0,
-        running: !!s.running,
+        // `running` is the harness's own flag and this console repeated it
+        // without corroboration. On 2026-08-20 a session sat at running:true
+        // with frozen counters for 4h41m while making zero progress, and the
+        // operator watched a screen that said work was happening. A truth
+        // console does not relay an upstream claim it can check.
+        //
+        // claimsRunning = what the harness says. stalledMs = wall-clock since
+        // the durable session log last advanced. The UI derives STALLED from
+        // both, and `running` now means "claims running AND is actually
+        // moving" so every existing consumer gets the corroborated answer.
+        claimsRunning: !!s.running,
+        stalledMs: (s.running && s.updatedAt) ? Math.max(0, Date.now() - s.updatedAt) : null,
+        stalled: !!(s.running && s.updatedAt && (Date.now() - s.updatedAt) > STALL_MS),
+        running: !!s.running && !(s.updatedAt && (Date.now() - s.updatedAt) > STALL_MS),
         preset: s.agentPreset || '',
         turns: st.turns ?? null,
         kTokIn: Math.round(((tk.uncachedInputTokens || 0) + (tk.cacheReadTokens || 0)) / 1000 * 10) / 10,
@@ -1139,6 +1157,13 @@ function fmtStamp(ms){
   var d=new Date(ms), p=function(n){return (n<10?'0':'')+n};
   return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
 }
+// Elapsed duration for the STALLED state. Deliberately coarse and blunt:
+// "4h41m" is the number that should have been on screen all morning.
+function fmtDur(ms){
+  if(ms==null) return '';
+  var m=Math.floor(ms/60000), h=Math.floor(m/60);
+  return h>0 ? h+'h'+(m%60)+'m' : m+'m';
+}
 function fmtRel(ms){
   if(!ms) return '&mdash;';
   var d=Date.now()-ms; if(d<0) d=0;
@@ -1181,6 +1206,22 @@ document.querySelectorAll('.tabbtn').forEach(function(b){b.addEventListener('cli
 window.addEventListener('hashchange', function(){ showTab((location.hash||'#overview').slice(1) || 'overview') });
 showTab((location.hash||'#overview').slice(1) || 'overview');
 
+// Stop one session through the harness's own cancel endpoint. Before this
+// existed the only remedy for a runaway was killing the whole dsh process.
+async function stopSession(sessionId, title){
+  // NO escape sequences and no line breaks in this string. It lives inside the
+  // PAGE template literal, so a backslash-n written here emits a REAL newline
+  // into the page and leaves an unterminated JS string -- a blank console.
+  if(!confirm('Stop session: ' + title + ' - this cancels its current turn. Findings already written to disk are kept.')) return;
+  var msg=document.getElementById('actionMsg');
+  msg.textContent='stopping '+title+'...';
+  try{
+    var r=await fetch('/api/action/stop-session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sessionId:sessionId})});
+    var t=await r.text();
+    msg.textContent = r.ok ? ('stopped '+title) : ('could not stop: '+t);
+  }catch(e){ msg.textContent='could not stop: '+e.message; }
+  setTimeout(function(){ msg.textContent=''; loadSessions(); },2500);
+}
 async function act(a){
   // Destructive globals name what they will destroy before doing it. One
   // misclick used to evict every resident model with no confirm and no undo.
@@ -1227,7 +1268,16 @@ function computeLights(s){
   // (>60s on the same LOADING/UNLOADING/RELOADING phase) is also an alarm
   // (amber). Plain "waiting" (no dependency yet) and ordinary in-flight
   // transitions are BENIGN and never trip this light.
-  if(!s.services.cockpit) lights.HARNESS={level:'r',cause:'cockpit :3080 is down'};
+  // A stalled session outranks every other harness condition: it is the state
+  // this console previously reported as healthy for 4h41m (2026-08-20) while
+  // the operator waited on a run that was already dead.
+  var stalledSessions=(s.sessions||[]).filter(function(x){return x.stalled});
+  if(stalledSessions.length){
+    lights.HARNESS={level:'r',cause:stalledSessions.length+' session(s) claim to be running but have not advanced: '+
+      stalledSessions.map(function(x){return '"'+(x.title||x.id)+'" idle '+fmtDur(x.stalledMs)}).join('; ')+
+      ' — the harness still reports them as running; stop them or investigate'};
+  }
+  else if(!s.services.cockpit) lights.HARNESS={level:'r',cause:'cockpit :3080 is down'};
   else if(s.plugins&&s.plugins.failed>0) {
     lights.HARNESS={level:'r',cause:s.plugins.failed+' plugin(s) failed: '+(s.plugins.failedList||[]).join(', ')};
   } else if(s.plugins&&s.plugins.stuck>0) {
@@ -1710,7 +1760,12 @@ async function loadSessions(){
         '<td>'+esc(s.title||s.id)+bug+(s.goal?'<br><span class="mut">'+esc(s.goal.slice(0,80))+'</span>':'')+'</td>'+
         '<td>'+esc(s.workspace)+'</td>'+
         '<td>'+esc(s.preset||'—')+'</td>'+
-        '<td><span class="dot '+(s.running?'busy':'up')+'"></span>'+(s.running?'running':'idle')+'</td>'+
+        // STALLED is its own state, never folded into running or idle. A
+        // session claiming to run while its log has not moved is the single
+        // most expensive thing this console can misreport (2026-08-20: 4h41m).
+        '<td>'+(s.stalled
+          ? '<span class="dot bad"></span><span class="v-warn">STALLED '+fmtDur(s.stalledMs)+'</span>'
+          : '<span class="dot '+(s.running?'busy':'up')+'"></span>'+(s.running?'running':'idle'))+'</td>'+
         '<td>'+(s.turns!=null?s.turns:'&mdash;')+'</td>'+
         '<td>'+(s.kTokIn!=null?s.kTokIn+'K':'&mdash;')+'</td>'+
         '<td>'+(s.kTokOut!=null?s.kTokOut+'K':'&mdash;')+'</td>'+
@@ -1720,6 +1775,11 @@ async function loadSessions(){
         '<td class="'+(s.running?'':'mut')+'">'+(s.ttftS!=null?s.ttftS+'s':'&mdash;')+'</td>'+
         '<td class="'+(s.running?'':'mut')+'">'+(s.decodeTps!=null?s.decodeTps+' <span class="mut" style="font-size:.75rem">tok/s</span>':'&mdash;')+'</td>'+
         '<td>'+fmtRel(s.mtime)+'</td>'+
+        // Only offered where it means something: a session the harness still
+        // believes is running. Stopping is the operator's call, so it asks.
+        '<td>'+((s.claimsRunning)
+          ? '<button class="btn btn-sm" onclick="event.stopPropagation();stopSession(&quot;'+esc(s.sessionId)+'&quot;,&quot;'+esc((s.title||s.id).replace(/"/g,'')) +'&quot;)">stop</button>'
+          : '')+'</td>'+
         '</tr>';
       var detail='<tr id="sdetail-'+i+'" style="display:none"><td colspan="11"><div class="detail">'+
         '<div>sessionId: <span class="mono">'+esc(s.sessionId)+'</span></div>'+
@@ -1729,7 +1789,7 @@ async function loadSessions(){
         '</div></td></tr>';
       return main+detail;
     }).join('');
-    document.getElementById('sessions-table').innerHTML='<table class="tbl"><thead><tr><th>Title</th><th>Workspace</th><th>Preset</th><th>State</th><th>Turns</th><th title="cumulative tokens sent to the model">Tokens in</th><th title="cumulative tokens generated">Tokens out</th><th title="how full this session’s context window is — a full window truncates large replies">Context</th><th title="time to first token, last run">TTFT</th><th title="decode rate, last run">Decode</th><th>Updated</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    document.getElementById('sessions-table').innerHTML='<table class="tbl"><thead><tr><th>Title</th><th>Workspace</th><th>Preset</th><th>State</th><th>Turns</th><th title="cumulative tokens sent to the model">Tokens in</th><th title="cumulative tokens generated">Tokens out</th><th title="how full this session’s context window is — a full window truncates large replies">Context</th><th title="time to first token, last run">TTFT</th><th title="decode rate, last run">Decode</th><th>Updated</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
   }catch(e){ document.getElementById('sessions-table').innerHTML='<div class="mut">sessions fetch failed</div>' }
 }
 function toggleSessionDetail(i){
@@ -2584,6 +2644,28 @@ const server = http.createServer(async (req, res) => {
       }
       spawn('lms', ['unload', identifier], { detached: true, stdio: 'ignore', shell: true }).unref();
       res.writeHead(200); res.end('ok'); return;
+    }
+    // Stop ONE session. On 2026-08-20 the only way to end a runaway was to
+    // kill the whole harness process from a shell, which also ends every other
+    // session and the cockpit itself. A console that lists running sessions
+    // has to be able to stop one of them.
+    if (req.method === 'POST' && url.pathname === '/api/action/stop-session') {
+      let body;
+      try { body = await readBody(req); } catch { res.writeHead(400); res.end('bad json'); return; }
+      const { sessionId } = body || {};
+      if (!sessionId) { res.writeHead(400); res.end('sessionId required'); return; }
+      try {
+        const r = await fetch('http://127.0.0.1:3080/api/session.cancel', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId }),
+        });
+        const text = await r.text().catch(() => '');
+        if (!r.ok) { res.writeHead(502); res.end(`harness refused (HTTP ${r.status}): ${text.slice(0, 200)}`); return; }
+        res.writeHead(200); res.end('ok'); return;
+      } catch (e) {
+        res.writeHead(502); res.end(`could not reach the harness on :3080 — ${e.message}`); return;
+      }
     }
     if (req.method === 'POST' && url.pathname.startsWith('/api/action/')) {
       const a = url.pathname.split('/').pop();
