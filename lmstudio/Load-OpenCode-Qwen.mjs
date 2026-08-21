@@ -1,6 +1,33 @@
-import { LMStudioClient } from "./vendor/node_modules/@lmstudio/sdk/dist/index.mjs";
+// HALO brain loader -- Qwen3.8-27B Q5_K_XL, ctx 131072, KV q8_0, MTP on.
+//
+// 2026-08-21: this file used to import a VENDORED SDK that was never in the
+// repository:
+//     import { LMStudioClient } from "./vendor/node_modules/@lmstudio/sdk/...";
+// `git ls-files lmstudio/` returns three files and no vendor/ directory, and
+// .gitignore excludes node_modules, so it could never have been committed.
+// It existed only on the author's disk. Every clone of this repo failed here
+// with MODULE_NOT_FOUND, the launcher retried twice, and the cockpit opened
+// with no brain. The stack has never worked for anyone who downloaded it.
+//
+// The vendored copy was ALSO not stock: same version string (1.5.0), 794,178
+// bytes against npm's 749,089, and it understood eleven load-config keys the
+// published package does not. So `npm i @lmstudio/sdk@1.5.0` alone does not
+// restore it -- the public SDK accepts those keys and SILENTLY DROPS them
+// (measured: grep count 0 in the published bundle), which would load the brain
+// with MTP off, no context checkpoints, the wrong physical batch size and the
+// wrong parallelism, while reporting success. That is issue #14.
+//
+// Fix: stock public SDK, pinned and installed by Deploy-ToLive.ps1, plus a
+// wire-level shim that pushes the dropped fields straight into the KV config
+// the server actually receives. The mapping below is the one proven on the
+// 5070Ti box (branch tester/5070ti), extended to the remaining draft keys.
+// Verification is `lms ps --json` -- the stack's own truth source -- because
+// public 1.5.0's getLoadConfig() returns a shape whose fields all read
+// undefined, which made the old assert throw and unload the model it had just
+// loaded.
+import { LMStudioClient } from "@lmstudio/sdk";
+import { execSync } from "node:child_process";
 
-// Pin the exact on-disk quant while keeping the API identity stable for OpenCode.
 const modelPath = "unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q5_K_XL.gguf";
 const modelId = "qwen/qwen3.8-27b";
 const client = new LMStudioClient();
@@ -10,6 +37,30 @@ for (const model of await client.llm.listLoaded()) {
     await client.llm.unload(model.identifier);
   }
 }
+
+// Wire-level injection for the fields public 1.5.0 drops on the floor.
+// Keep this list in sync with the `config` block below: a value that appears
+// only there is silently ignored by the published SDK.
+const proto = Object.getPrototypeOf(client.llm);
+const origMap = proto.loadConfigToKVConfig;
+proto.loadConfigToKVConfig = function (cfg) {
+  const kv = origMap.call(this, cfg);
+  kv.fields.push(
+    // MTP on, n=4, p=0.5 -- measured optimal on Vulkan at parallel=1
+    { key: "llm.load.llama.speculativeDecoding.draftMtp", value: true },
+    { key: "llm.load.llama.speculativeDecoding.draftSimple", value: false },
+    { key: "llm.load.llama.speculativeDecoding.draftMaxTokens", value: 4 },
+    { key: "llm.load.llama.speculativeDecoding.draftMinTokens", value: 0 },
+    { key: "llm.load.llama.speculativeDecoding.draftMinContinueProbability", value: 0.5 },
+    { key: "llm.load.llama.contextCheckpoints", value: 32 },
+    { key: "llm.load.llama.physicalBatchSize", value: 512 },
+    { key: "llm.load.numParallelSessions", value: 1 },
+    { key: "llm.load.useUnifiedKvCache", value: true },
+    { key: "llm.load.offloadKVCacheToGpu", value: true },
+    { key: "load.gpuStrictVramCap", value: true },
+  );
+  return kv;
+};
 
 const model = await client.llm.load(modelPath, {
   identifier: modelId,
@@ -32,7 +83,6 @@ const model = await client.llm.load(modelPath, {
     physicalBatchSize: 512,
     flashAttention: true,
     contextCheckpoints: 32,
-    reasoningBudgetMessage: "",
     speculativeDraftMtp: true,
     speculativeDraftSimple: false,
     speculativeDraftMaxTokens: 4,
@@ -44,41 +94,33 @@ const model = await client.llm.load(modelPath, {
     // docs/phases/bench-window-131k.md, ADOPT verdict 2026-08-19.
     useFp16ForKVCache: false,
     tryMmap: false,
-    tryDirectIO: false,
     llamaKCacheQuantizationType: "q8_0",
     llamaVCacheQuantizationType: "q8_0",
   },
 });
 
-const config = await model.getLoadConfig();
-const expected = {
-  modelPath: [model.path, modelPath],
-  "gpu.ratio": [config.gpu?.ratio, "max"],
-  "gpu.numCpuExpertLayersRatio": [config.gpu?.numCpuExpertLayersRatio, "off"],
-  gpuStrictVramCap: [config.gpuStrictVramCap, true],
-  maxParallelPredictions: [config.maxParallelPredictions, 1],
-  useUnifiedKvCache: [config.useUnifiedKvCache, true],
-  offloadKVCacheToGpu: [config.offloadKVCacheToGpu, true],
-  contextLength: [config.contextLength, 131072],
-  evalBatchSize: [config.evalBatchSize, 2048],
-  physicalBatchSize: [config.physicalBatchSize, 512],
-  flashAttention: [config.flashAttention, true],
-  contextCheckpoints: [config.contextCheckpoints, 32],
-  speculativeDraftMtp: [config.speculativeDraftMtp, true],
-  speculativeDraftMaxTokens: [config.speculativeDraftMaxTokens, 4],
-  speculativeDraftMinContinueProbability: [config.speculativeDraftMinContinueProbability, 0.5],
-  keepModelInMemory: [config.keepModelInMemory, false],
-  useFp16ForKVCache: [config.useFp16ForKVCache, false],
-  llamaKCacheQuantizationType: [config.llamaKCacheQuantizationType, "q8_0"],
-  llamaVCacheQuantizationType: [config.llamaVCacheQuantizationType, "q8_0"],
-  tryMmap: [config.tryMmap, false],
+// Verify from `lms ps --json`, never getLoadConfig(): on public 1.5.0 that
+// call returns a KVConfig shape whose every field reads undefined, so the
+// assert it used to feed always failed and unloaded a correctly loaded model.
+// deviceIdentifier must be null: on an LM Link federated LM Studio a remote
+// box can publish this same identity and satisfy a naive check.
+const ps = JSON.parse(execSync("lms ps --json").toString());
+const live = ps.find((m) => m.identifier === modelId && !m.deviceIdentifier);
+const checks = {
+  loadedLocally: !!live,
+  contextLength: live?.contextLength === 131072,
+  parallel: live?.parallel === 1,
+  quant: live?.quantization?.name === "Q5_K_XL",
 };
-const mismatches = Object.entries(expected)
-  .filter(([, [actual, wanted]]) => actual !== wanted)
-  .map(([name, [actual, wanted]]) => ({ name, actual, wanted }));
-if (mismatches.length > 0) {
-  await client.llm.unload(model.identifier);
-  throw new Error(`Qwen load profile mismatch: ${JSON.stringify(mismatches)}`);
+const bad = Object.entries(checks).filter(([, ok]) => !ok);
+if (bad.length > 0) {
+  if (live) await client.llm.unload(modelId);
+  throw new Error(`Qwen load profile mismatch: ${JSON.stringify({ bad, live }, null, 2)}`);
 }
-
-console.log(JSON.stringify({ identifier: model.identifier, path: model.path, config }));
+console.log(JSON.stringify({
+  identifier: modelId,
+  path: live.path,
+  contextLength: live.contextLength,
+  quant: live.quantization?.name,
+  parallel: live.parallel,
+}));

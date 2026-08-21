@@ -36,6 +36,7 @@ $map = @(
     @{ src = "dsh\memory\Snapshot-Memory.ps1";      dst = "$U\.dsh\memory\Snapshot-Memory.ps1" }
     @{ src = "agents-skills\reddit-search\SKILL.md"; dst = "$U\.agents\skills\reddit-search\SKILL.md" }
     @{ src = "workspace\AGENTS.md";                  dst = "$U\Desktop\Code\AGENTS.md" }
+    @{ src = "lmstudio\package.json";            dst = "$U\.lmstudio\scripts\package.json" }
     @{ src = "lmstudio\Load-OpenCode-Qwen.mjs";  dst = "$U\.lmstudio\scripts\Load-OpenCode-Qwen.mjs" }
     @{ src = "lmstudio\Load-Worker-Coder.mjs";   dst = "$U\.lmstudio\scripts\Load-Worker-Coder.mjs" }
     @{ src = "lmstudio\Sweep-MTP.mjs";           dst = "$U\.lmstudio\scripts\Sweep-MTP.mjs" }
@@ -417,6 +418,49 @@ Write-Host "Backups retained at: $backupRoot"
 # self-heals what a deploy can own; AUDIT reports every row loudly. The
 # audit is a report, not a gate -- it only fails the deploy for a gap the
 # deploy itself just caused.
+
+Write-Host "`n== stage: lmstudio SDK (the loaders' only dependency) =="
+# Before 2026-08-21 the loader scripts imported a VENDORED copy of
+# @lmstudio/sdk that was never committed (git ls-files lmstudio/ -> 3 files,
+# no vendor/, and .gitignore excludes node_modules). It existed only on the
+# author's disk, so every clone failed here with MODULE_NOT_FOUND, the
+# launcher retried twice, and the cockpit opened with no brain. The loaders
+# now import the stock public package, pinned in lmstudio\package.json and
+# installed here. This stage is what makes a fresh clone able to load a model.
+$scriptsDir = "$U\.lmstudio\scripts"
+$sdkEntry   = "$scriptsDir\node_modules\@lmstudio\sdk\package.json"
+$wantSdk    = (Get-Content (Join-Path $repo "lmstudio\package.json") -Raw | ConvertFrom-Json).dependencies.'@lmstudio/sdk'
+$haveSdk    = if (Test-Path $sdkEntry) { (Get-Content $sdkEntry -Raw | ConvertFrom-Json).version } else { $null }
+if ($haveSdk -eq $wantSdk) {
+    Write-Host "  @lmstudio/sdk $haveSdk already installed"
+} else {
+    Write-Host "  installing @lmstudio/sdk $wantSdk (have: $(if ($haveSdk) { $haveSdk } else { 'none' }))..."
+    Push-Location $scriptsDir
+    & npm install --no-audit --no-fund 2>&1 | ForEach-Object { "    $_" }
+    $npmExit = $LASTEXITCODE
+    Pop-Location
+    $haveSdk = if (Test-Path $sdkEntry) { (Get-Content $sdkEntry -Raw | ConvertFrom-Json).version } else { $null }
+    if ($npmExit -ne 0 -or $haveSdk -ne $wantSdk) {
+        Write-Error "@lmstudio/sdk did not install (npm exit $npmExit, resolved '$haveSdk', wanted '$wantSdk'). The loaders cannot run without it - the brain will not load. Check that Node and npm are on PATH."
+        exit 1
+    }
+    Write-Host "  @lmstudio/sdk $haveSdk installed"
+}
+# Prove the loaders can actually resolve their import on THIS machine, rather
+# than assuming the install implies it.
+# The probe must live IN $scriptsDir: ESM resolves bare specifiers from the
+# importing FILE's directory, not the process working directory, so a probe in
+# %TEMP% fails even when the real loaders (which do live here) resolve fine.
+$resolveProbe = Join-Path $scriptsDir "dsh-sdk-resolve.probe.mjs"
+Set-Content -Path $resolveProbe -Encoding utf8 -Value 'import { LMStudioClient } from "@lmstudio/sdk"; console.log(typeof LMStudioClient === "function" ? "ok" : "bad");'
+$probe = & node $resolveProbe 2>&1
+$probeExit = $LASTEXITCODE
+Remove-Item $resolveProbe -Force -ErrorAction SilentlyContinue
+if ($probeExit -ne 0 -or "$probe".Trim() -ne 'ok') {
+    Write-Error "The loader scripts cannot import @lmstudio/sdk from $scriptsDir : $probe"
+    exit 1
+}
+Write-Host "  loaders can resolve @lmstudio/sdk"
 
 Write-Host "`n== stage: register (scheduled task: HALO Memory Snapshot) =="
 $snapTaskName = 'HALO Memory Snapshot'
