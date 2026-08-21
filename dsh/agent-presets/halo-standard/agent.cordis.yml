@@ -73,6 +73,16 @@
 - id: tool-jobs
   name: '@deepseek-ai/dsh-tool-jobs'
 
+# The SECOND door onto the one-decode-lane failure, and it needs no workflow
+# tool at all. jobs-local caps concurrent work per owner at 10 by default, and
+# `tool-subagent` below runs backgroundMode: continuable -- so one turn could
+# start ten background children against a model that serves one prediction.
+# They queue, their idle timers run down, and they die exactly as the five
+# subagents did on 2026-08-20. Registry rows live on the host plane, so the
+# cap is set there; this comment stays here because this is where a reader
+# looks when asking "how many children can this agent start?".
+#   -> see dsh/cordis.patch.yml, jobs-local: maxConcurrentJobsPerOwner: 1
+
 # ── skills ──────────────────────────────────────────────────────────────────
 
 # The skill REGISTRY lives in the host composition and is layered per scope:
@@ -224,10 +234,25 @@
         backgroundMode: one-shot
         maxDepth: provider-managed
 
+    # ONE DECODE LANE PER MACHINE. The brain serves maxParallelPredictions=1,
+    # so concurrency here is not a throughput dial -- it is the number of
+    # callers that will sit in a queue burning their own idle timers.
+    #
+    # maxConcurrentAgents defaults to 0, which the engine resolves to AVAILABLE
+    # CPU PARALLELISM. On this box that is ~16 children against a model that
+    # answers one at a time. That is exactly the 2026-08-20 failure: five
+    # subagents fanned out, all queued, three died on idle timeout, one never
+    # received a single token. The default was armed and unset until 2026-08-21.
+    #
+    # maxTotalAgents is engine-level policy and CANNOT be set from a workflow
+    # script (the tool sends only meta/script/args), so the run ceiling has to
+    # live here or it does not exist.
     - id: workflow-worker-thread
       name: '@deepseek-ai/dsh-workflow-worker-thread'
       config:
         provider: spawn
+        maxConcurrentAgents: 1
+        maxTotalAgents: 64
 
     - id: tool-workflow
       name: '@deepseek-ai/dsh-tool-workflow'
