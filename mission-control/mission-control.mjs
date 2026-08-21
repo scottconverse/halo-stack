@@ -10,9 +10,70 @@ import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
 import os from 'node:os';
+import crypto from 'node:crypto';
 
 const execFileP = promisify(execFile);
 const PORT = 3090;
+
+// ── safe subprocess execution (no shell) ────────────────────────────────────
+// GATE-2026-08-21 / PE-1 (Blocker): every lms/npx/node call in this file used
+// { shell: true }. With shell:true, Node CONCATENATES args into a command line
+// instead of passing them as an argv vector, so any string that reaches spawn
+// from an HTTP request body can inject a second command. Reproduced: an
+// `identifier` of `x & echo PROVEN > f &` ran the echo. shell:true was there
+// only because `lms` and `npx` are Windows .cmd shims that bare spawn cannot
+// find. The correct fix is to RESOLVE the real executable once and run it with
+// shell:false, so arguments are never re-parsed by a shell.
+function resolveExe(name, fixedDir) {
+  if (path.isAbsolute(name) && fs.existsSync(name)) return name;
+  const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';') : [''];
+  const dirs = (process.env.PATH || '').split(path.delimiter);
+  // Known fixed location first, so a poisoned PATH cannot redirect us.
+  if (fixedDir) dirs.unshift(fixedDir);
+  for (const d of dirs) {
+    if (!d) continue;
+    for (const ext of exts) {
+      const cand = path.join(d, name + ext);
+      if (fs.existsSync(cand)) return cand;
+    }
+    const bare = path.join(d, name);
+    if (fs.existsSync(bare)) return bare;
+  }
+  return null;
+}
+// EXE and the safe* helpers are defined AFTER the HOME/constant block below;
+// see "safe subprocess execution — resolved" further down.
+// Run a fixed executable with an argv array and NO shell. Returns {stdout}.
+function safeExecFile(which, args, opts = {}) {
+  const exe = EXE[which] || which;
+  return execFileP(exe, args, { ...opts, shell: false });
+}
+// Fire-and-forget variant (replaces detached spawn(..., {shell:true})).
+function safeSpawn(which, args, opts = {}) {
+  const exe = EXE[which] || which;
+  return spawn(exe, args, { ...opts, shell: false });
+}
+
+// ── local request authorization (PE-1 / QA2) ────────────────────────────────
+// Binding to 127.0.0.1 stops remote network attackers but NOT a CSRF request
+// from a page the operator's own browser has open, which is the real vector.
+// A token minted at boot and required on every state-changing POST closes it:
+// the page is served the token inline, a cross-origin attacker cannot read it
+// (same-origin policy), so it cannot forge an authorized POST. We also require
+// an Origin/Referer that is our own, rejecting form-POST CSRF outright.
+const ACTION_TOKEN = crypto.randomBytes(24).toString('hex');
+
+// A state-changing POST is authorized only if it presents the boot token AND
+// its Origin/Referer is our own. Read-only GETs are unaffected.
+function actionAuthorized(req) {
+  const tok = req.headers['x-mc-token'];
+  if (tok !== ACTION_TOKEN) return false;
+  const origin = req.headers['origin'] || '';
+  const referer = req.headers['referer'] || '';
+  const ok = (u) => !u || u.startsWith('http://127.0.0.1:' + PORT) || u.startsWith('http://localhost:' + PORT);
+  return ok(origin) && ok(referer);
+}
+
 const HOME = os.homedir();
 const DSH_SESSIONS = path.join(HOME, '.dsh', 'sessions');
 const MEMORY_FILE = path.join(HOME, '.dsh', 'memory', 'memory.json');
@@ -34,6 +95,12 @@ const LOADER_Q5 = path.join(HOME, '.lmstudio', 'scripts', 'Load-OpenCode-Qwen.mj
 const LOADER_WORKER = path.join(HOME, '.lmstudio', 'scripts', 'Load-Worker-Coder.mjs');
 const START_DSH = path.join(HOME, '.dsh', 'Start-DSH.ps1');
 const DSH_VERSION_PIN = '0.1.0-rc.7';
+// Resolved executables (needs HOME above). safeExecFile/safeSpawn read this.
+const EXE = {
+  lms: resolveExe('lms', path.join(HOME, '.lmstudio', 'bin')),
+  npx: resolveExe('npx'),
+  node: resolveExe('node') || process.execPath,
+};
 // A session that claims to be running but whose durable log has not advanced
 // in this long is STALLED, whatever the harness's own flag says. Five minutes
 // is well past a slow first token at depth (measured worst case 403s) so a
@@ -80,14 +147,14 @@ function gib(bytes) { return Math.round((bytes || 0) / 1073741824 * 10) / 10; }
 
 async function lmsPs() {
   try {
-    const { stdout } = await execFileP('lms', ['ps', '--json'], { shell: true, timeout: 8000 });
+    const { stdout } = await safeExecFile('lms', ['ps', '--json'], { timeout: 8000 });
     return JSON.parse(stdout || '[]');
   } catch { return null; }
 }
 
 async function lmsLs() {
   try {
-    const { stdout } = await execFileP('lms', ['ls', '--json'], { shell: true, timeout: 10000 });
+    const { stdout } = await safeExecFile('lms', ['ls', '--json'], { timeout: 10000 });
     return JSON.parse(stdout || '[]');
   } catch { return null; }
 }
@@ -96,7 +163,7 @@ async function lmsLs() {
 // the text table. Columns: LLM ENGINE (name@version) | SELECTED (✓) | MODEL FORMAT.
 async function lmsRuntimeLs() {
   try {
-    const { stdout } = await execFileP('lms', ['runtime', 'ls'], { shell: true, timeout: 8000 });
+    const { stdout } = await safeExecFile('lms', ['runtime', 'ls'], { timeout: 8000 });
     const lines = stdout.split('\n').map(l => l.replace(/\r$/, '')).filter(l => l.trim());
     const rows = [];
     let selected = null;
@@ -122,7 +189,7 @@ async function lmsRuntimeLs() {
 async function lmsVersionStr() {
   for (const args of [['version'], ['--version']]) {
     try {
-      const { stdout } = await execFileP('lms', args, { shell: true, timeout: 5000 });
+      const { stdout } = await safeExecFile('lms', args, { timeout: 5000 });
       const semver = stdout.match(/\b(\d+\.\d+\.\d+)\b/);
       if (semver) return semver[1];
       const commit = stdout.match(/CLI commit:\s*(\S+)/i);
@@ -180,7 +247,7 @@ function isKnownLocalIdentity(identifier, modelKey) {
 
 async function lmsLinkStatus() {
   try {
-    const { stdout } = await execFileP('lms', ['link', 'status', '--json'], { shell: true, timeout: 8000 });
+    const { stdout } = await safeExecFile('lms', ['link', 'status', '--json'], { timeout: 8000 });
     return JSON.parse(stdout || '{}');
   } catch { return null; }
 }
@@ -913,10 +980,10 @@ function loaderQuants() {
 
 const ACTIONS = {
   'start-cockpit': () => spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', START_DSH], { detached: true, stdio: 'ignore' }).unref(),
-  'load-q5': () => spawn('node', [LOADER_Q5], { detached: true, stdio: 'ignore', shell: true }).unref(),
-  'load-worker': () => spawn('node', [LOADER_WORKER], { detached: true, stdio: 'ignore', shell: true }).unref(),
-  'unload-worker': () => spawn('lms', ['unload', 'qwen3-coder-30b-a3b-instruct'], { detached: true, stdio: 'ignore', shell: true }).unref(),
-  'unload-all': () => spawn('lms', ['unload', '--all'], { detached: true, stdio: 'ignore', shell: true }).unref(),
+  'load-q5': () => safeSpawn('node', [LOADER_Q5], { detached: true, stdio: 'ignore' }).unref(),
+  'load-worker': () => safeSpawn('node', [LOADER_WORKER], { detached: true, stdio: 'ignore' }).unref(),
+  'unload-worker': () => safeSpawn('lms', ['unload', 'qwen3-coder-30b-a3b-instruct'], { detached: true, stdio: 'ignore' }).unref(),
+  'unload-all': () => safeSpawn('lms', ['unload', '--all'], { detached: true, stdio: 'ignore' }).unref(),
 };
 
 function readBody(req) {
@@ -1148,6 +1215,15 @@ It's snapshotted hourly by the scheduled task <span class="mono">HALO Memory Sna
 </div>
 
 <script>
+// Per-boot action token, injected server-side. Every state-changing POST must
+// carry it (and a same-origin Origin/Referer), so a cross-origin page cannot
+// forge one -- it cannot read this value.
+var MC_TOKEN='__MC_ACTION_TOKEN__';
+function postAction(pathname, bodyObj){
+  var opts={method:'POST',headers:{'x-mc-token':MC_TOKEN}};
+  if(bodyObj!==undefined){ opts.headers['content-type']='application/json'; opts.body=JSON.stringify(bodyObj); }
+  return fetch(pathname, opts);
+}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function fmtK(n){return n==null?'&mdash;':(Math.round(n/1024*10)/10)+'K'}
 // One date format everywhere. Adjacent rows used to mix "2026-08-17" with
@@ -1216,7 +1292,7 @@ async function stopSession(sessionId, title){
   var msg=document.getElementById('actionMsg');
   msg.textContent='stopping '+title+'...';
   try{
-    var r=await fetch('/api/action/stop-session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sessionId:sessionId})});
+    var r=await postAction('/api/action/stop-session',{sessionId:sessionId});
     var t=await r.text();
     msg.textContent = r.ok ? ('stopped '+title) : ('could not stop: '+t);
   }catch(e){ msg.textContent='could not stop: '+e.message; }
@@ -1234,7 +1310,7 @@ async function act(a){
     if(!confirm('Unload '+targets.length+' model'+(targets.length>1?'s':'')+' and free about '+gb.toFixed(1)+' GB?\\n\\n'+names+'\\n\\nAny session using them will reload from disk on its next request.')) return;
   }
   document.getElementById('actionMsg').textContent='running: '+a+'...';
-  await fetch('/api/action/'+a,{method:'POST'});
+  await postAction('/api/action/'+a);
   setTimeout(function(){document.getElementById('actionMsg').textContent='';refreshStatus();if(currentTab==='models')loadModels()},2500);
 }
 
@@ -1247,13 +1323,13 @@ async function loadModel(i){
   var ctx=ctxInput?parseInt(ctxInput.value,10):32768;
   if(!ctx||ctx<512) ctx=32768;
   document.getElementById('actionMsg').textContent='loading '+row.modelKey+' (ctx '+ctx+')...';
-  await fetch('/api/action/load-model',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({path:row.path,modelKey:row.modelKey,ctx:ctx})});
+  await postAction('/api/action/load-model',{path:row.path,modelKey:row.modelKey,ctx:ctx});
   setTimeout(function(){document.getElementById('actionMsg').textContent='';loadModels();refreshStatus()},3000);
 }
 async function unloadModel(i){
   var row=modelsCache[i]; if(!row||!row.identifier) return;
   document.getElementById('actionMsg').textContent='unloading '+row.identifier+'...';
-  await fetch('/api/action/unload-model',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({identifier:row.identifier})});
+  await postAction('/api/action/unload-model',{identifier:row.identifier});
   setTimeout(function(){document.getElementById('actionMsg').textContent='';loadModels();refreshStatus()},2500);
 }
 function showLoadRow(i){
@@ -1902,7 +1978,7 @@ function renderSystem(s){
 async function validateConfig(){
   document.getElementById('sys-validate').innerHTML='<div class="mut">running &mdash; this dumps the full config, can take up to 2 minutes&hellip;</div>';
   try{
-    var r=await (await fetch('/api/validate-config',{method:'POST'})).json();
+    var r=await (await postAction('/api/validate-config')).json();
     renderSystem(lastStatus||{services:{},ram:{},gpu:{},disk:{}});
     document.getElementById('sys-validate').innerHTML=
       '<div class="row"><span class="k">last run</span><span>'+fmtStamp(r.when)+'</span></div>'+
@@ -2518,7 +2594,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/') {
       // no-store: the app ships inline in this file — a cached copy silently
       // runs stale UI against a newer server after every MC update.
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); res.end(PAGE); return;
+      // Inject the per-boot action token into the served page. A cross-origin
+      // attacker cannot read the response (same-origin policy), so it cannot
+      // learn the token and cannot forge an authorized state-changing POST.
+      const page = PAGE.replace('__MC_ACTION_TOKEN__', ACTION_TOKEN);
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); res.end(page); return;
     }
     if (req.method === 'GET' && url.pathname === '/api/status') {
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(await status())); return;
@@ -2608,9 +2688,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/validate-config') {
+      if (!actionAuthorized(req)) { res.writeHead(403); res.end('unauthorized: missing or invalid action token'); return; }
       let result;
       try {
-        const { stdout, stderr } = await execFileP('npx', ['@deepseek-ai/dsh@' + DSH_VERSION_PIN, 'web', '--dump-config'], { shell: true, timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
+        const { stdout, stderr } = await safeExecFile('npx', ['@deepseek-ai/dsh@' + DSH_VERSION_PIN, 'web', '--dump-config'], { timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
         const combined = `${stdout}\n${stderr}`;
         const warnings = combined.split('\n').filter(l => /unmatched|warn/i.test(l)).map(l => l.trim()).filter(Boolean).slice(0, 50);
         result = { when: Date.now(), ok: warnings.length === 0, warnings };
@@ -2621,28 +2702,45 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(result)); return;
     }
     if (req.method === 'POST' && url.pathname === '/api/action/load-model') {
+      if (!actionAuthorized(req)) { res.writeHead(403); res.end('unauthorized: missing or invalid action token'); return; }
       let body;
       try { body = await readBody(req); } catch { res.writeHead(400); res.end('bad json'); return; }
       const { path: modelPath, modelKey, ctx } = body || {};
       if (!modelPath || !modelKey) { res.writeHead(400); res.end('path and modelKey required'); return; }
-      const ctxN = Number.isFinite(ctx) && ctx > 0 ? Math.round(ctx) : 32768;
-      spawn('lms', ['load', modelPath, '--identifier', modelKey, '--context-length', String(ctxN), '-y'], { detached: true, stdio: 'ignore', shell: true }).unref();
+      // Validate against the REAL catalog, not just truthiness. lms ls is the
+      // set of models that actually exist; anything else is rejected before it
+      // can reach a subprocess. modelKey (the identifier we assign) is held to
+      // a strict charset so it cannot smuggle a flag or a metacharacter.
+      const catalog = await lmsLs();
+      if (!(catalog || []).some(m => m.path === modelPath || m.modelKey === modelPath)) {
+        res.writeHead(400); res.end('unknown model path (not in lms ls)'); return;
+      }
+      if (!/^[A-Za-z0-9._:@\/-]{1,128}$/.test(String(modelKey))) {
+        res.writeHead(400); res.end('invalid modelKey'); return;
+      }
+      const ctxN = Number.isFinite(ctx) && ctx > 0 ? Math.min(1048576, Math.round(ctx)) : 32768;
+      // No shell: args are an argv vector, never concatenated into a command line.
+      safeSpawn('lms', ['load', String(modelPath), '--identifier', String(modelKey), '--context-length', String(ctxN), '-y'], { detached: true, stdio: 'ignore' }).unref();
       res.writeHead(200); res.end('ok'); return;
     }
     if (req.method === 'POST' && url.pathname === '/api/action/unload-model') {
+      if (!actionAuthorized(req)) { res.writeHead(403); res.end('unauthorized: missing or invalid action token'); return; }
       let body;
       try { body = await readBody(req); } catch { res.writeHead(400); res.end('bad json'); return; }
       const { identifier } = body || {};
       if (!identifier) { res.writeHead(400); res.end('identifier required'); return; }
-      // Server-side guard, not just UI: refuse to unload a model that is
-      // running on another LM Link device (the 5070 Ti port found this
-      // button could kill a remote box's active brain).
+      // The identifier MUST match a currently-loaded model. This both validates
+      // input (only real, resident identifiers reach the subprocess) and lets
+      // the LM Link guard below apply unconditionally -- previously an
+      // attacker-crafted string left `target` undefined and fell straight
+      // through to spawn. No match -> reject, never execute.
       const ps = await lmsPs();
       const target = (ps || []).find(m => m.identifier === identifier);
-      if (target && target.deviceIdentifier != null) {
+      if (!target) { res.writeHead(404); res.end('no such loaded model'); return; }
+      if (target.deviceIdentifier != null) {
         res.writeHead(403); res.end('refused: model runs on a remote LM Link device — unload it from that device'); return;
       }
-      spawn('lms', ['unload', identifier], { detached: true, stdio: 'ignore', shell: true }).unref();
+      safeSpawn('lms', ['unload', String(identifier)], { detached: true, stdio: 'ignore' }).unref();
       res.writeHead(200); res.end('ok'); return;
     }
     // Stop ONE session. On 2026-08-20 the only way to end a runaway was to
@@ -2650,10 +2748,11 @@ const server = http.createServer(async (req, res) => {
     // session and the cockpit itself. A console that lists running sessions
     // has to be able to stop one of them.
     if (req.method === 'POST' && url.pathname === '/api/action/stop-session') {
+      if (!actionAuthorized(req)) { res.writeHead(403); res.end('unauthorized: missing or invalid action token'); return; }
       let body;
       try { body = await readBody(req); } catch { res.writeHead(400); res.end('bad json'); return; }
       const { sessionId } = body || {};
-      if (!sessionId) { res.writeHead(400); res.end('sessionId required'); return; }
+      if (!sessionId || typeof sessionId !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/.test(sessionId)) { res.writeHead(400); res.end('valid sessionId required'); return; }
       try {
         const r = await fetch('http://127.0.0.1:3080/api/session.cancel', {
           method: 'POST',
@@ -2668,8 +2767,14 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (req.method === 'POST' && url.pathname.startsWith('/api/action/')) {
+      if (!actionAuthorized(req)) { res.writeHead(403); res.end('unauthorized: missing or invalid action token'); return; }
       const a = url.pathname.split('/').pop();
-      if (ACTIONS[a]) { ACTIONS[a](); res.writeHead(200); res.end('ok'); return; }
+      // Own properties only: `ACTIONS[a]` walked the prototype chain, so
+      // /api/action/constructor and /api/action/hasOwnProperty resolved to
+      // functions and returned 200 (QA3). Restrict to declared actions.
+      if (Object.prototype.hasOwnProperty.call(ACTIONS, a) && typeof ACTIONS[a] === 'function') {
+        ACTIONS[a](); res.writeHead(200); res.end('ok'); return;
+      }
       res.writeHead(404); res.end('unknown action'); return;
     }
     res.writeHead(404); res.end('not found');
