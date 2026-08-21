@@ -3,6 +3,56 @@
 All notable changes to this repository are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+Master is ahead of the newest tagged release below. These changes are merged
+but not yet cut into a version — they include fixes to defects that the tagged
+releases shipped with. Do not read the 0.5.0 entry as the state of the tree.
+
+### Fixed
+- **The repository could not load a model on any machine but the author's.**
+  The loader scripts imported a vendored `@lmstudio/sdk` that was never
+  committed; every clone failed with `MODULE_NOT_FOUND`. Now the stock public
+  SDK, pinned and installed by the deploy, with a wire-level shim for the
+  fields the published SDK drops. (This is why 0.1.0–0.5.0 worked only in
+  place.)
+- **Loader reported a *successful* model load as a failure** when its
+  verification subprocess (`lms ps`) threw — causing a redundant full model
+  reload. Verification now falls back through the SDK and reports UNVERIFIED
+  rather than failing a load that succeeded.
+- **Remote code execution in Mission Control.** The model load/unload action
+  endpoints passed request-body strings into `spawn(..., {shell:true})` with no
+  authentication — reachable by CSRF from any page the operator's browser had
+  open. Now: no shell, argv vectors only, a per-boot action token plus a
+  same-origin check on every state-changing POST, and catalog validation of
+  model identifiers.
+- **The author's username was hardcoded** into four deployed config files;
+  now derived from `$USERPROFILE`.
+- Both launchers rewrote to capture the server's own output, identity-check
+  HTTP readiness, refuse to open a browser on a dead port, and guard against a
+  double-launch race.
+- The machine-identity marker is now written only after post-deploy validation
+  succeeds, so a rolled-back deploy cannot leave a poisoned identity.
+- The deploy's audit now checks *where* the memory-snapshot task points, not
+  just that it exists; backups and per-run logs are pruned instead of growing
+  unbounded.
+
+### Added
+- Concurrency, retry, and compaction caps to prevent the 2026-08-20 runaway
+  (one turn, 4h41m, 2.4M input tokens): workflow engine `maxConcurrentAgents`,
+  a per-owner background-job cap, `retryPolicy.maxRetries`, and retuned
+  compaction budgets that actually converge at the 131,072 window.
+- Mission Control derives a STALLED state from wall-clock progress instead of
+  relaying the harness `running` flag (which showed a dead run as healthy for
+  4h41m), and a per-session Stop control.
+- A test suite (`tests/Run-Tests.ps1`) with a mutation harness
+  (`tests/Prove-TestsFailClosed.ps1`) that proves each check can actually fail.
+
+### Corrected
+- Public site/README claims that the measurements do not support (fan-out
+  speed, cross-machine routing, "frontier-class", compaction continuity at
+  131,072) were removed or qualified, and an honest-status disclosure added.
+
 ## [0.5.0] - 2026-08-20
 
 A deploy shipped one machine's instructions to another machine and an

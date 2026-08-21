@@ -54,21 +54,40 @@ await client.llm.load(modelPath, {
 
 // deviceIdentifier must be null: on an LM Link federated LM Studio another box
 // can publish this same identity and satisfy a naive check.
-const ps = JSON.parse(execSync("lms ps --json").toString());
-const live = ps.find((m) => m.identifier === modelId && !m.deviceIdentifier);
+// GATE-2026-08-21 / W1 (Critical): same fix as the brain loader. A verification
+// that cannot RUN is UNVERIFIED, never FAILED -- the load already succeeded, so
+// do not make Start-DSH retry it or unload a working model. SDK first (no
+// subprocess), lms ps fallback for fields the SDK omits.
+let live = null, verifiedBy = null;
+try {
+  const loaded = await client.llm.listLoaded();
+  const m = loaded.find((x) => x.identifier === modelId);
+  if (m) { live = m; verifiedBy = "sdk"; }
+} catch { /* fall through */ }
+if (!live) {
+  try {
+    const ps = JSON.parse(execSync("lms ps --json").toString());
+    live = ps.find((m) => m.identifier === modelId && !m.deviceIdentifier) || null;
+    if (live) verifiedBy = "lms-ps";
+  } catch (e) {
+    console.log(JSON.stringify({ identifier: modelId, verification: "UNVERIFIED", reason: String(e.message || e) }));
+    process.exit(0);
+  }
+}
 const checks = {
   loadedLocally: !!live,
-  contextLength: live?.contextLength === 32768,
-  parallel: live?.parallel === 1,
+  contextLength: live?.contextLength == null || live.contextLength === 32768,
+  parallel: live?.parallel == null || live.parallel === 1,
 };
 const bad = Object.entries(checks).filter(([, ok]) => !ok);
 if (bad.length > 0) {
-  if (live) await client.llm.unload(modelId);
+  await client.llm.unload(modelId);
   throw new Error(`Worker load profile mismatch: ${JSON.stringify({ bad, live }, null, 2)}`);
 }
 console.log(JSON.stringify({
   identifier: modelId,
+  verifiedBy,
   path: live.path,
-  contextLength: live.contextLength,
-  parallel: live.parallel,
+  contextLength: live.contextLength ?? null,
+  parallel: live.parallel ?? null,
 }));

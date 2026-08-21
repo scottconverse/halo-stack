@@ -367,6 +367,24 @@ Write-Host "`n== stage: backup =="
 $timestamp = Get-Date -Format 'yyyyMMddHHmmss'
 $backupRoot = "$U\.dsh\ConfigBackups\deploy-$timestamp"
 $backedUp = @()
+# GATE-2026-08-21 / QA5 (Major): backups and the launchers' per-run logs grew
+# strictly unbounded (25 backup dirs already, no prune anywhere). Keep the most
+# recent 15 backup sets; a deploy that has succeeded 15 times over does not need
+# the 16th-oldest snapshot. Newest are kept because rollback only ever restores
+# from the set this run just wrote.
+$existingBackups = @(Get-ChildItem "$U\.dsh\ConfigBackups" -Directory -Filter 'deploy-*' -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+if ($existingBackups.Count -gt 15) {
+    $existingBackups | Select-Object -Skip 15 | ForEach-Object {
+        Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "  pruned $($existingBackups.Count - 15) old backup set(s), kept newest 15"
+}
+# Same for the launchers' per-run logs (dsh-server-*, mission-control-*).
+$logDir = "$U\.dsh\logs"
+if (Test-Path $logDir) {
+    $oldLogs = @(Get-ChildItem $logDir -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -Skip 30)
+    if ($oldLogs.Count -gt 0) { $oldLogs | Remove-Item -Force -ErrorAction SilentlyContinue; Write-Host "  pruned $($oldLogs.Count) old server/console log(s), kept newest 30" }
+}
 foreach ($m in $map) {
     if ($m.skipIfExists -and (Test-Path $m.dst)) { continue }
     $existed = Test-Path $m.dst
@@ -394,8 +412,14 @@ foreach ($m in $map) {
         Write-Warning "missing repo file: $($m.src)"
     }
 }
-Set-Content -Path "$U\.dsh\machine" -Value $machine -Encoding ascii
-Write-Host "machine marker written: ~\.dsh\machine = $machine"
+# GATE-2026-08-21 / PE-2 (Critical): the machine marker is NOT written here.
+# It used to be written before post-validation, outside the backup/rollback
+# transaction. A failed non-halo deploy would then roll every config file back
+# to its pre-deploy content but leave the marker saying (e.g.) '5070ti' -- and
+# the marker is exactly what the NEXT unlabeled deploy trusts to pick a machine
+# profile. That renders one machine's files through another machine's
+# replacements: issue #35's shape, self-inflicted by rollback, and silent.
+# The write is deferred to AFTER post-validation succeeds (below).
 
 Write-Host "`n== stage: validate (live config composes clean) =="
 $live = Invoke-DumpConfigGate
@@ -423,6 +447,12 @@ if (-not $live.Clean) {
     exit 1
 }
 Write-Host "live config composes clean - no unmatched patch targets"
+
+# PE-2: only now, past post-validation, is it safe to advance the recorded
+# machine identity. A deploy that failed and rolled back never reaches here, so
+# it can never leave a marker ahead of the files on disk.
+Set-Content -Path "$U\.dsh\machine" -Value $machine -Encoding ascii
+Write-Host "machine marker written: ~\.dsh\machine = $machine"
 
 Write-Host "`nOK. staged -> validated -> backed up -> applied -> validated -> OK."
 Write-Host "Backups retained at: $backupRoot"
@@ -534,8 +564,19 @@ Write-AuditRow 'LM Studio login-service mechanism (Run key or Startup shortcut)'
 # just succeeded this cannot be missing except by our own doing -- that one
 # IS deploy-caused and fails the deploy.
 $snapTask = Get-ScheduledTask -TaskName $snapTaskName -ErrorAction SilentlyContinue
-$snapOk = ($null -ne $snapTask -and $snapTask.State -in @('Ready', 'Running'))
-Write-AuditRow "scheduled task '$snapTaskName' registered and Ready" $snapOk $(if ($snapTask) { "state: $($snapTask.State)" } else { '' })
+# GATE-2026-08-21 / W2 (Major): the task is machine-global. Deploying from a
+# different home (a test, a second checkout) silently repoints THIS machine's
+# task at that other home's Snapshot-Memory.ps1 -- and this audit printed PASS
+# because the task merely existed and was Ready, never checking WHERE it points.
+# A task whose action path is not this deploy's own path is a real defect.
+$snapExpected = "$U\.dsh\memory\Snapshot-Memory.ps1"
+$snapActualArgs = if ($snapTask) { ($snapTask.Actions | ForEach-Object { $_.Arguments }) -join ' ' } else { '' }
+$snapPointsHere = $snapActualArgs -like "*$snapExpected*"
+$snapOk = ($null -ne $snapTask -and $snapTask.State -in @('Ready', 'Running') -and $snapPointsHere)
+$snapDetail = if (-not $snapTask) { '' }
+              elseif (-not $snapPointsHere) { "state: $($snapTask.State) but points ELSEWHERE -> $snapActualArgs" }
+              else { "state: $($snapTask.State), points here" }
+Write-AuditRow "scheduled task '$snapTaskName' registered, Ready, and pointing at THIS home" $snapOk $snapDetail
 if ($registerOk -and -not $snapOk) { $auditDeployCausedFailure = $true }
 
 # Row 4: desktop icons
