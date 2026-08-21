@@ -8,7 +8,7 @@
 # Mechanism: env-override fallback, NOT Cordis `isolate`.
 #
 # Cordis's `isolate` entry field (EntryOptions.isolate, a coeffect-key -> realm
-# map) IS present and wired in dsh 0.1.0-rc.7 — confirmed in
+# map) IS present and wired (confirmed on 0.1.0-rc.7; carried to 0.1.1-rc.2) in
 # node_modules/@deepseek-ai/cordis-plugin-loader/src/config/isolate.ts
 # (compiled into lib/index.js, `ctx.plugin(isolate)` installed by every
 # Loader instance). But it isolates *injected service resolution* (a symbol
