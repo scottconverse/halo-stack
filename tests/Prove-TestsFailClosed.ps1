@@ -47,10 +47,16 @@ $mutations = @(
        from = '  maxTokens: 12288'
        to   = '  maxTokens: 8192' }
 
-    @{ id = 'L3'; defect = 'launcher opens a browser without proving the service serves'
+    @{ id = 'L3'; defect = 'launcher opens a browser without proving the service serves (TE4 bypass: guard kept, its exit removed)'
        file = 'dsh\Start-MissionControl.ps1'
-       from = 'if (-not $serving) {'
-       to   = 'if ($false) {' }
+       from = '    "Not opening a browser at a dead port." | Add-Content $log
+    Start-Process notepad $log
+    exit 1
+}'
+       to   = '    "Not opening a browser at a dead port." | Add-Content $log
+    Start-Process notepad $log
+}
+if ($false) { exit 1 }' }
 
     @{ id = 'C13'; defect = 'Mission Control trusts the harness running flag again (the 4h41m lie)'
        file = 'mission-control\mission-control.mjs'
@@ -66,6 +72,32 @@ $mutations = @(
        file = 'workspace\AGENTS.md'
        from = 'SCOPE: these instructions are for HALO-stack (DeepSeek Harness) sessions only.'
        to   = 'These instructions are for HALO-stack sessions.' }
+
+    # GATE-2026-08-21: the defects the GauntletGate panel reproduced.
+    @{ id = 'SEC1'; defect = 'PE-1 RCE returns: a shell:true subprocess in Mission Control'
+       file = 'mission-control\mission-control.mjs'
+       from = "const { stdout } = await safeExecFile('lms', ['ps', '--json'], { timeout: 8000 });"
+       to   = "const { stdout } = await execFileP('lms', ['ps', '--json'], { shell: true, timeout: 8000 });" }
+
+    @{ id = 'SEC2'; defect = 'a state-changing endpoint drops its auth check'
+       file = 'mission-control\mission-control.mjs'
+       from = "if (!actionAuthorized(req)) { res.writeHead(403); res.end('unauthorized: missing or invalid action token'); return; }"
+       to   = "if (false) { }" }
+
+    @{ id = 'W1T'; defect = 'W1 returns: loader verifies with an unguarded top-level execSync'
+       file = 'lmstudio\Load-Worker-Coder.mjs'
+       from = "let live = null, verifiedBy = null;"
+       to   = "const ps = JSON.parse(execSync(`"lms ps --json`").toString());`nlet live = null, verifiedBy = null;" }
+
+    @{ id = 'PE2T'; defect = 'PE-2 returns: machine marker written before post-validation'
+       file = 'scripts\Deploy-ToLive.ps1'
+       from = "Write-Host `"live config composes clean - no unmatched patch targets`""
+       to   = "Set-Content -Path `"`$U\.dsh\machine`" -Value `$machine -Encoding ascii`nWrite-Host `"live config composes clean - no unmatched patch targets`"" }
+
+    @{ id = 'W2T'; defect = 'W2 returns: audit stops checking where the task points'
+       file = 'scripts\Deploy-ToLive.ps1'
+       from = '$snapOk = ($null -ne $snapTask -and $snapTask.State -in @(''Ready'', ''Running'') -and $snapPointsHere)'
+       to   = '$snapOk = ($null -ne $snapTask -and $snapTask.State -in @(''Ready'', ''Running''))' }
 )
 
 Write-Host "`n=== mutation check: does the suite actually fail closed? ===" -ForegroundColor Cyan
@@ -75,7 +107,21 @@ foreach ($m in $mutations) {
     $tmp = Join-Path $env:TEMP ("halo-mutate-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
     try {
         # Scratch copy: the working tree is never modified.
-        Copy-Item $repo $tmp -Recurse -Force -Exclude '.git' -ErrorAction Stop
+        # TE6 (gate 2026-08-21): Copy-Item -Exclude '.git' does NOT exclude
+        # .git on a recursive copy (the exclude is only honored when -Path is
+        # wildcarded, and even then not at nested depth). Use robocopy with a
+        # real directory exclude, which works at every level. Falls back to a
+        # plain copy if robocopy is unavailable (non-Windows CI).
+        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+        $rc = Get-Command robocopy -ErrorAction SilentlyContinue
+        if ($rc) {
+            # robocopy exit codes 0-7 are success; 8+ are real errors.
+            & robocopy $repo $tmp /E /XD "$repo\.git" /NFL /NDL /NJH /NJS /NP /R:1 /W:1 | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "robocopy failed (exit $LASTEXITCODE)" }
+            $global:LASTEXITCODE = 0
+        } else {
+            Copy-Item "$repo\*" $tmp -Recurse -Force -Exclude '.git' -ErrorAction Stop
+        }
         $target = Join-Path $tmp $m.file
         $text = Get-Content $target -Raw
         if ($text -notmatch [regex]::Escape($m.from)) {

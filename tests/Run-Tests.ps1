@@ -172,30 +172,49 @@ Test-Case 'L2' 'readiness is an HTTP identity check, never a bare TCP listen' {
     $true
 }
 Test-Case 'L3' 'no launcher opens a browser without first proving the service serves' {
-    # The mutation check exposed the first version of this test as toothless:
-    # it searched the preceding lines for any of Fail-Loud / exit 1, so
-    # replacing the guard CONDITION with `if ($false)` left an exit inside the
-    # dead block and the test still passed. The condition itself has to be
-    # inspected -- a guard that cannot fire is not a guard.
+    # TE4 (gate 2026-08-21): the earlier "is there an exit within 20 lines"
+    # check was defeatable -- keep the real guard, drop its exit, add a dead
+    # `if($false){exit 1}` nearby, and the browser opened unconditionally while
+    # the test passed. This version is STRUCTURAL: it walks the readiness guard
+    # (`if (-not $serving)` / `if (Test-*Serving)`) with brace-depth tracking
+    # and requires an exit/Fail-Loud to occur INSIDE that block, before the
+    # block closes. A dead `if($false){exit 1}` elsewhere no longer counts,
+    # because it is not the readiness guard's own body.
     $bad = @()
     foreach ($f in 'dsh\Start-DSH.ps1', 'dsh\Start-MissionControl.ps1') {
         $lines = Get-Content (Join-Path $repo $f)
+        # EVERY browser-open must be covered. Two legitimate shapes:
+        #  (a) reuse:  if (Test-*Serving) { open; exit 0 }  -- open INSIDE the
+        #      positive-serving block, so it only runs when serving is true.
+        #  (b) final:  if (-not $serving) { ...; exit 1 }   then open at depth 0
+        #      -- a negative guard that EXITS before the open is reached.
+        # TE4 defeats a naive check by dropping the exit from (b)'s block; the
+        # brace-depth walk below requires the exit to be inside the guard body.
         for ($i = 0; $i -lt $lines.Count; $i++) {
             if ($lines[$i] -notmatch 'Start-Process\s+"http://127\.0\.0\.1:(3080|3090)"') { continue }
-            $guarded = $false
-            for ($j = [Math]::Max(0, $i - 30); $j -lt $i; $j++) {
-                $l = $lines[$j]
-                # A real guard branches on the SERVING state and then stops.
-                if ($l -match 'if\s*\(\s*-not\s+\$serving' -or
-                    $l -match 'if\s*\(\s*\$serving' -or
-                    $l -match 'if\s*\(\s*Test-(CockpitServing|MCServing)') {
-                    # ...and the block it opens must actually terminate the run.
-                    for ($k = $j; $k -lt [Math]::Min($lines.Count, $j + 20); $k++) {
-                        if ($lines[$k] -match 'Fail-Loud|exit 1') { $guarded = $true; break }
+            $ok = $false
+            # Shape (a): is this open INSIDE an `if (Test-*Serving) {` block that
+            # has not yet closed? Walk back tracking brace depth.
+            for ($j = $i - 1; $j -ge 0 -and $j -ge $i - 8; $j--) {
+                if ($lines[$j] -match 'if\s*\(\s*Test-(CockpitServing|MCServing)\b\s*\)\s*\{') { $ok = $true; break }
+                if ($lines[$j] -match '^\S' -and $lines[$j] -notmatch 'Start-Process') { break }
+            }
+            # Shape (b): a preceding `if (-not $serving) {` whose own block exits
+            # before it closes.
+            if (-not $ok) {
+                for ($j = 0; $j -lt $i; $j++) {
+                    if ($lines[$j] -notmatch 'if\s*\(\s*-not\s+\$serving\b') { continue }
+                    $depth = 0; $started = $false; $exits = $false
+                    for ($k = $j; $k -lt $i; $k++) {
+                        $depth += ([regex]::Matches($lines[$k], '\{')).Count - ([regex]::Matches($lines[$k], '\}')).Count
+                        if (([regex]::Matches($lines[$k], '\{')).Count -gt 0) { $started = $true }
+                        if ($started -and ($lines[$k] -match '\bexit\s+1\b' -or $lines[$k] -match '\bFail-Loud\b')) { $exits = $true }
+                        if ($started -and $depth -le 0) { break }
                     }
+                    if ($exits) { $ok = $true; break }
                 }
             }
-            if (-not $guarded) { $bad += "$f line $($i+1): opens a browser with no guard that both tests the serving state and stops the run" }
+            if (-not $ok) { $bad += "$f line $($i+1): browser opens without a serving guard that exits on failure" }
         }
     }
     if ($bad.Count) { return ($bad -join '; ') }
@@ -313,6 +332,64 @@ Test-Case 'R2' 'README tells the user how to make a .ps1 shortcut that actually 
 }
 
 # AGENTS.md deploys into a shared directory (issue #35).
+# GATE-2026-08-21: tests for the defects the GauntletGate panel found.
+Test-Case 'SEC1' 'Mission Control runs no subprocess with shell:true (PE-1 RCE)' {
+    $t = Get-Text 'mission-control\mission-control.mjs'
+    # Only executable lines; the fix comment mentions shell:true to explain it.
+    $code = (Get-Content (Join-Path $repo 'mission-control\mission-control.mjs') | Where-Object { $_ -notmatch '^\s*//' }) -join "`n"
+    if ($code -match 'shell:\s*true') { return 'a shell:true subprocess remains - args are concatenated, request strings can inject' }
+    $true
+}
+Test-Case 'SEC2' 'every state-changing Mission Control POST requires the action token (PE-1/QA2)' {
+    $t = Get-Text 'mission-control\mission-control.mjs'
+    if ($t -notmatch 'ACTION_TOKEN' -or $t -notmatch 'function actionAuthorized') { return 'no action-token auth defined' }
+    # Each POST action route must call actionAuthorized before doing work.
+    $routes = [regex]::Matches($t, "req\.method === 'POST' && url\.pathname(?:\.startsWith\('/api/action/'\)| === '/api/action/[a-z-]+'| === '/api/validate-config')")
+    $missing = 0
+    foreach ($m in $routes) {
+        $after = $t.Substring($m.Index, [Math]::Min(400, $t.Length - $m.Index))
+        if ($after -notmatch 'actionAuthorized\(req\)') { $missing++ }
+    }
+    if ($missing -gt 0) { return "$missing state-changing POST route(s) do not check actionAuthorized" }
+    $true
+}
+Test-Case 'W1T' 'loaders treat an unrunnable verifier as UNVERIFIED, never a failed load (W1)' {
+    $bad = @()
+    foreach ($f in 'lmstudio\Load-OpenCode-Qwen.mjs', 'lmstudio\Load-Worker-Coder.mjs') {
+        $t = Get-Text $f
+        # The lms ps call must be inside a try/catch that reports UNVERIFIED,
+        # and the loader must verify via the SDK's listLoaded first.
+        if ($t -notmatch 'listLoaded') { $bad += "$f does not verify via the SDK (listLoaded)" }
+        if ($t -notmatch 'UNVERIFIED') { $bad += "$f has no UNVERIFIED path - a broken verifier still fails the load" }
+        # The execSync verify must sit inside a try/catch (the UNVERIFIED
+        # path). Detect the OLD unguarded shape: a top-level (2-space indent
+        # or less) `const ps = JSON.parse(execSync(...))` with no try before it
+        # on the same logical block. The current code indents it inside try{}.
+        foreach ($m in [regex]::Matches($t, '(?m)^([ ]*)const ps = JSON\.parse\(execSync\("lms ps --json"\)')) {
+            if ($m.Groups[1].Value.Length -lt 4) { $bad += "$f has a top-level (unguarded) execSync verify" }
+        }
+    }
+    if ($bad.Count) { return ($bad -join '; ') }
+    $true
+}
+Test-Case 'PE2T' 'the machine marker is written AFTER post-validation, inside the transaction' {
+    $lines = Get-Content (Join-Path $repo 'scripts\Deploy-ToLive.ps1')
+    $markerLine = ($lines | Select-String -Pattern 'Set-Content -Path "\$U\\\.dsh\\machine"' | Select-Object -First 1).LineNumber
+    $validateLine = ($lines | Select-String -Pattern 'live config composes clean - no unmatched' | Select-Object -First 1).LineNumber
+    if (-not $markerLine) { return 'marker write not found' }
+    if (-not $validateLine) { return 'post-validate success line not found' }
+    if ($markerLine -lt $validateLine) { return "marker written at line $markerLine, BEFORE post-validation at $validateLine - a rolled-back deploy leaves a poisoned identity" }
+    $true
+}
+Test-Case 'W2T' 'the deploy audit checks WHERE the scheduled task points, not just that it exists' {
+    $t = Get-Text 'scripts\Deploy-ToLive.ps1'
+    if ($t -notmatch 'snapPointsHere') { return 'audit does not compute whether the task points at this home' }
+    # The PASS/FAIL must DEPEND on snapPointsHere, not merely mention it. A
+    # mutation that drops it from $snapOk must fail here.
+    if ($t -notmatch '\$snapOk\s*=\s*\([^\r\n]*\$snapPointsHere') { return 'snapPointsHere is computed but not wired into $snapOk - a repointed task would still PASS' }
+    $true
+}
+
 Test-Case 'G1' 'every deployed AGENTS.md declares its scope' {
     $bad = @()
     foreach ($f in Get-ChildItem $repo -Recurse -Filter 'AGENTS.md' -File | Where-Object { $_.FullName -notmatch '\\node_modules\\|\\\.git\\' }) {
@@ -327,15 +404,30 @@ Test-Case 'G1' 'every deployed AGENTS.md declares its scope' {
 if (-not $Static) {
     Write-Host "`n-- live: this machine --"
 
-    Test-Case 'V1' 'the deployed loaders resolve their SDK import' {
+    Test-Case 'V1' 'the deployed loaders resolve THEIR OWN import (not a substitute)' {
+        # TE1 (gate 2026-08-21): the old version wrote its own hardcoded probe
+        # and ran that, so it passed even when the real loader imported a broken
+        # path. Now it extracts and runs the loader's ACTUAL import line, and
+        # cross-checks it against the file, so a reintroduced vendor import
+        # fails here.
         $s = "$env:USERPROFILE\.lmstudio\scripts"
-        if (-not (Test-Path "$s\Load-OpenCode-Qwen.mjs")) { return 'skip' }
-        $probe = Join-Path $s 'halo-test-resolve.probe.mjs'
-        Set-Content -Path $probe -Encoding utf8 -Value 'import { LMStudioClient } from "@lmstudio/sdk"; console.log(typeof LMStudioClient === "function" ? "ok" : "bad");'
-        $out = (& node $probe 2>&1) -join ' '
-        Remove-Item $probe -Force -ErrorAction SilentlyContinue
-        if ($out -match '\bok\b') { return $true }
-        return "loaders cannot import @lmstudio/sdk: $out"
+        $bad = @()
+        foreach ($name in 'Load-OpenCode-Qwen.mjs', 'Load-Worker-Coder.mjs', 'Sweep-MTP.mjs') {
+            $f = Join-Path $s $name
+            if (-not (Test-Path $f)) { continue }
+            $line = (Get-Content $f | Where-Object { $_ -match '^\s*import\s' -and $_ -match 'lmstudio' } | Select-Object -First 1)
+            if (-not $line) { $bad += "$name has no @lmstudio import line"; continue }
+            # Run the loader's real import line, from the loader's own directory,
+            # so module resolution matches exactly what the loader gets.
+            $probe = Join-Path $s ('halo-test-realimport-' + [guid]::NewGuid().ToString('N').Substring(0,6) + '.mjs')
+            Set-Content -Path $probe -Encoding utf8 -Value ($line + "`nconsole.log(typeof LMStudioClient === 'function' ? 'ok' : 'bad');")
+            $out = (& node $probe 2>&1) -join ' '
+            Remove-Item $probe -Force -ErrorAction SilentlyContinue
+            if ($out -notmatch '\bok\b') { $bad += "$name import fails to resolve: $out" }
+        }
+        if (-not (Test-Path (Join-Path $s 'Load-OpenCode-Qwen.mjs'))) { return 'skip' }
+        if ($bad.Count) { return ($bad -join '; ') }
+        $true
     }
 
     Test-Case 'V2' 'the deployed loaders do not depend on an uncommitted vendor directory' {

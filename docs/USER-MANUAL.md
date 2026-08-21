@@ -290,11 +290,15 @@ session log is append-only, and compaction/pruning/plan-mode are all
 engineered as cache-safe surface replacements. This means prefill (the
 expensive prompt-reading step) is paid once per session, not once per turn
 — the 8.1× TTFT figure in §3 above is this invariant cashing out in a real
-measurement. Compaction is the one planned exception: at the 131,072-context
-brain's compaction settings (80% trigger / 16% retain / 8,192-token summary
-cap), a compaction event costs one deliberate re-prefill, measured at ~80 s
-in production shape (TTFT sequence: 157 s cold → 13 s cached → 80 s
-post-compaction).
+measurement. Compaction is the one planned exception. **Note (2026-08-21):**
+the original settings quoted here (80% trigger / 16% retain / 8,192-token
+summary cap) could **not** converge at the 131,072 window — they asked the
+summarizer to fold ~84,000 tokens into 8,192 (10:1), which truncated every
+time and re-triggered, producing the 2026-08-20 runaway (five failed
+compactions, ~95 minutes). The current settings are **75% trigger / 50% retain
+/ 12,288-token summary cap** (2.7:1), which converges in one pass; see
+`dsh/settings.yaml` for the authoritative values and the reasoning. Treat
+compaction as a safety net, not a routine step: bound work so it does not fire.
 
 **(f) Five known rc.7 Windows bugs and their workarounds** are already
 listed in the README and are not duplicated here.
@@ -786,7 +790,18 @@ Creator-mode cockpit plugin — `docs/experiments/creator-mode-2026-08-18.md`.)
 | OpenCode on a cloud model unexpectedly | It raced the boot before the model loaded | Click the model name → pick "Local Daily Driver" |
 | Workspace won't select in composer | You picked C-Drive | Use Desktop-Code (rc.7 bug; permissions unaffected) |
 | Harness won't boot at all | A bad MCP/plugin row (e.g. BrowserMCP) | Check the row `disabled: true` flags in `~\.dsh\cordis.patch.yml` |
-| :3080 listening but frozen (0-byte responses, process alive) | Upstream Windows deadlock loading session logs >1 MB ([discussion 2165](https://github.com/deepseek-ai/deepseek-harness/discussions/2165), found by `/delta-scan-halo`) | Kill + relaunch via desktop icon; archive or move old session dirs out of `~\.dsh\sessions\` to keep logs small until fixed upstream |
+| :3080 listening but frozen (0-byte responses, process alive) | Upstream Windows deadlock loading session logs >1 MB ([discussion 2165](https://github.com/deepseek-ai/deepseek-harness/discussions/2165), found by `/delta-scan-halo`) | **The launcher now detects this itself** — its readiness check is an HTTP identity check, not a bare port check, so a frozen server is treated as not-serving and cleared on the next launch. If you hit it live, just double-click **DeepSeek Harness** again. To prevent it, keep `~\.dsh\sessions\` small (archive old session dirs). |
+
+**Mission Control operations (2026-08-21).** The console distinguishes three
+session states, not two: **running**, **idle**, and **STALLED** — a session the
+harness still reports as running but whose durable log has not advanced for 5+
+minutes. A stalled session trips the top (HARNESS) alarm with the elapsed time,
+because the harness's own `running` flag alone once showed a dead run as healthy
+for 4h41m. Each running session has a **Stop** button that cancels just that
+session through the harness (findings already written to disk are kept) instead
+of forcing you to kill the whole process. Launcher failures are captured to
+`~\.dsh\launcher.log` plus a per-run `~\.dsh\logs\dsh-server-<timestamp>.log`;
+both are pruned automatically by the deploy.
 
 Full bug list with root causes: README §Known issues and `docs/phases/phase3-reach-results.md`.
 
