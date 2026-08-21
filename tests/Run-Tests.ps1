@@ -110,9 +110,36 @@ Test-Case 'A1' 'workflow engine concurrency is capped (default resolves to CPU c
     if ($y -notmatch 'maxTotalAgents:\s*\d+') { return 'maxTotalAgents has no ceiling (cannot be set from a workflow script)' }
     $true
 }
-Test-Case 'A2' 'background subagent jobs are capped per owner (default is 10)' {
-    $y = Get-Text 'dsh\cordis.patch.yml'
-    if ($y -notmatch 'maxConcurrentJobsPerOwner:\s*1\b') { return 'jobs-local has no per-owner cap; one turn could start 10 background children on a 1-slot model' }
+Test-Case 'A2' 'background subagent jobs are capped per owner, under the id the base actually uses' {
+    # PE-M1 (gate 2026-08-21): the OLD version only checked the cap TEXT exists.
+    # It passed while the cap was attached to `id: jobs-local`, which the base
+    # plugin does not use (it composes as `id: jobs`, name dsh-jobs-local), so
+    # dump-config said `patch: entry "jobs-local" not found` and the cap never
+    # took effect. A source-text check is not enough -- assert the id is right.
+    $lines = Get-Content (Join-Path $repo 'dsh\cordis.patch.yml')
+    $capLine = ($lines | Select-String -Pattern 'maxConcurrentJobsPerOwner:\s*1\b' | Select-Object -First 1)
+    if (-not $capLine) { return 'no per-owner job cap; one turn could start 10 background children on a 1-slot model' }
+    # Walk back to the nearest `- id:` above the cap and require it to be `jobs`.
+    for ($i = $capLine.LineNumber - 1; $i -ge 0; $i--) {
+        if ($lines[$i] -match '^\s*-\s*id:\s*(\S+)') {
+            if ($Matches[1] -eq 'jobs') { return $true }
+            return "the job cap is under id '$($Matches[1])', but the base plugin composes as id 'jobs' -- it will NOT attach (dump-config: entry not found)"
+        }
+    }
+    return 'could not find the -id: entry the job cap belongs to'
+}
+Test-Case 'A2b' 'the deploy config-validation gates catch a mis-id''d (silently unattached) patch' {
+    # PE-M1: dsh reports an unattached patch as `patch: entry "X" not found`,
+    # which the gates historically ignored (they grepped warn|unmatched|error).
+    # Every dump-config gate must now also fail on "not found".
+    $bad = @()
+    foreach ($pair in @(
+        @('scripts\Deploy-ToLive.ps1', 'not found'),
+        @('scripts\Sync-FromLive.ps1', 'not found'),
+        @('mission-control\mission-control.mjs', 'not found'))) {
+        if ((Get-Text $pair[0]) -notmatch [regex]::Escape($pair[1])) { $bad += "$($pair[0]) does not treat '$($pair[1])' as a validation failure" }
+    }
+    if ($bad.Count) { return ($bad -join '; ') }
     $true
 }
 
@@ -223,7 +250,7 @@ Test-Case 'L3' 'no launcher opens a browser without first proving the service se
 
 Test-Case 'L4' 'launchers parse under PowerShell 5.1 and are ASCII-only' {
     $bad = @()
-    foreach ($f in 'dsh\Start-DSH.ps1', 'dsh\Start-MissionControl.ps1', 'scripts\Deploy-ToLive.ps1', 'tests\Run-Tests.ps1') {
+    foreach ($f in 'dsh\Start-DSH.ps1', 'dsh\Start-MissionControl.ps1', 'scripts\Deploy-ToLive.ps1', 'scripts\Sync-FromLive.ps1', 'tests\Run-Tests.ps1') {
         $errs = $null
         [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $repo $f), [ref]$null, [ref]$errs)
         if ($errs) { $bad += "$f : $($errs[0].Message)" }
@@ -335,25 +362,40 @@ Test-Case 'R2' 'README tells the user how to make a .ps1 shortcut that actually 
 # MIGRATION 2026-08-21: dsh installs/runs via pnpm dlx, not npx (npm's resolver
 # hangs on this Node 25 box for every dsh version past rc.7).
 Test-Case 'MIG1' 'no functional file installs or runs dsh via npx (would hang on Node 25)' {
+    # TE-1 (gate 2026-08-21): the old check required "npx" and "deepseek-ai/dsh"
+    # on the SAME line, so it missed Deploy's two `npx $dshPkg` call sites (the
+    # package is a variable there, not a literal). Value-blind now: an `npx`
+    # that runs either the literal package OR a $dsh* package variable is the
+    # hang path. $dshPkg is defined once and used on the bare-var lines.
     $bad = @()
     foreach ($f in 'dsh\Start-DSH.ps1', 'scripts\Deploy-ToLive.ps1', 'scripts\Sync-FromLive.ps1', 'mission-control\mission-control.mjs') {
+        $definesDshVar = (Get-Text $f) -match '\$dsh[A-Za-z]*\s*=\s*["'']?@deepseek-ai/dsh'
         foreach ($line in Get-Content (Join-Path $repo $f)) {
             if ($line -match '^\s*#' -or $line -match '^\s*//') { continue }
-            # An npx invocation that runs the dsh package is the hang path.
-            if ($line -match 'npx' -and $line -match 'deepseek-ai(/|\\)dsh') { $bad += "$f : $($line.Trim())" }
+            $runsDsh = ($line -match 'deepseek-ai(/|\\)dsh') -or ($definesDshVar -and $line -match '\$dsh[A-Za-z]*\b')
+            if ($line -match '\bnpx\b' -and $runsDsh) { $bad += "$f : $($line.Trim())" }
         }
     }
     if ($bad.Count) { return ("still installs/runs dsh via npx: " + ($bad -join ' | ')) }
     $true
 }
 Test-Case 'MIG2' 'the dsh version pin is identical across every functional file' {
+    # TE-2 (gate 2026-08-21): the old regex only matched digits adjacent to a
+    # literal "dsh@", so it found ZERO pins in mission-control.mjs (its pin is
+    # `const DSH_VERSION_PIN = '0.1.1-rc.2'` -- uppercase, no `dsh@` on the
+    # line). MC could regress to rc.7 and MIG2 stayed green. Now also match the
+    # named constant, so every functional file contributes its pin.
     $pins = @{}
     foreach ($f in 'dsh\Start-DSH.ps1', 'scripts\Deploy-ToLive.ps1', 'scripts\Sync-FromLive.ps1', 'mission-control\mission-control.mjs') {
-        foreach ($m in [regex]::Matches((Get-Text $f), 'dsh@?[''"]?(0\.\d+\.\d+-rc\.\d+)')) { $pins[$m.Groups[1].Value] = $true }
+        $t = Get-Text $f
+        foreach ($m in [regex]::Matches($t, 'dsh@?[''"]?(0\.\d+\.\d+-rc\.\d+)')) { $pins[$m.Groups[1].Value] = $true }
+        foreach ($m in [regex]::Matches($t, 'DSH_VERSION_PIN\s*=\s*[''"](0\.\d+\.\d+-rc\.\d+)[''"]')) { $pins[$m.Groups[1].Value] = $true }
     }
     $versions = @($pins.Keys)
     if ($versions.Count -eq 0) { return 'no dsh version pin found in any functional file' }
     if ($versions.Count -gt 1) { return "mixed dsh version pins across files: $($versions -join ', ') -- a partial bump" }
+    # And MC's constant must be found at all (TE-2's specific gap).
+    if ((Get-Text 'mission-control\mission-control.mjs') -notmatch 'DSH_VERSION_PIN\s*=\s*[''"]0\.\d+\.\d+-rc\.\d+[''"]') { return 'mission-control.mjs DSH_VERSION_PIN not matched -- MIG2 blind to the RCE-surface file' }
     $true
 }
 Test-Case 'MIG3' 'the launcher starts pnpm via pnpm.cmd, not bare pnpm (which is pnpm.ps1)' {

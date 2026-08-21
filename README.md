@@ -148,7 +148,13 @@ Zero third-party analytics. Live harness processes hold exactly one connection: 
 LM Studio. The `/delta-scan-halo` skill re-checks telemetry defaults on every future release
 before any re-pin.
 
-## Known rc.7 Windows issues (worked around in these configs)
+## Known Windows issues (worked around in these configs)
+
+> These were verified on `0.1.0-rc.7`; re-verification against the current
+> `0.1.1-rc.2` pin is pending (2026-08-21 migration) — some may already be
+> fixed upstream. The workarounds are harmless if a bug is gone, so they stay
+> documented until each is re-checked live.
+
 
 1. `@browsermcp/mcp` crashes harness boot when port 9009 is free → row disabled.
 2. Drive-root workspaces (`C:\`) never bind in the composer → use a normal directory.

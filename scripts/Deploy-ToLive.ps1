@@ -23,6 +23,10 @@ $dshPkg = "@deepseek-ai/dsh@0.1.1-rc.2"
 $prereqs = @(
     @{ name = 'node'; why = 'Install Node 22+ (README step 1).' }
     @{ name = 'pnpm'; why = 'Install pnpm 11 (README step 1: "npm i -g pnpm"). The stack runs dsh via "pnpm dlx" because npm''s resolver hangs on this Node version.' }
+    # PE-N3 (gate 2026-08-21): npm is still shelled out below to install the
+    # LM Studio SDK (`& npm install` in the lmstudio-SDK stage), so it remains a
+    # hard prerequisite even though dsh itself now installs via pnpm.
+    @{ name = 'npm';  why = 'Ships with Node; the deploy uses "npm install" for the LM Studio SDK. Reinstall Node 22+ (README step 1).' }
     @{ name = 'lms';  why = 'Install LM Studio, then put its CLI on PATH (README step 1: "lms bootstrap"). The launcher and both model loaders shell out to it.' }
 )
 $missing = @($prereqs | Where-Object { -not (Get-Command $_.name -ErrorAction SilentlyContinue) })
@@ -74,10 +78,17 @@ function Resolve-JsYamlOrBootstrap {
         $candidates = @("$U\.dsh\profiles\node_modules\js-yaml")
         # npx cache (legacy) AND the pnpm store (MIGRATION: dsh installs via pnpm
         # dlx now, so js-yaml lands under the pnpm content-addressed store).
+        # TE-3 (gate 2026-08-21): the store path is
+        # store\<v>\links\@\js-yaml\<version>\<hash>\node_modules\js-yaml -- the
+        # module is 3 levels below links\@\js-yaml, not AT it. The earlier glob
+        # stopped at links\@\js-yaml (a dir holding only "<version>\"), which is
+        # not require-able; Test-Path accepted it and skipped the bootstrap.
+        # Glob to the real module dir, and accept a candidate ONLY if it has a
+        # package.json, so a bare directory can never win.
         $candidates += Get-ChildItem "$U\AppData\Local\npm-cache\_npx\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
-        $candidates += Get-ChildItem "$U\AppData\Local\pnpm\store\*\links\@\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+        $candidates += Get-ChildItem "$U\AppData\Local\pnpm\store\*\links\@\js-yaml\*\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
         $candidates += Get-ChildItem "$U\AppData\Local\pnpm-cache\dlx\*\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
-        $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        $candidates | Where-Object { $_ -and (Test-Path (Join-Path $_ 'package.json')) } | Select-Object -First 1
     }
     $found = & $resolve
     if (-not $found) {
@@ -144,7 +155,10 @@ function Invoke-DumpConfigGate {
     $dump = pnpm dlx $dshPkg web --dump-config 2>&1
     $exit = $LASTEXITCODE
     if ($AltHome) { Remove-Item Env:\DSH_HOME -ErrorAction SilentlyContinue }
-    $warnings = $dump | Select-String -Pattern "warn|unmatched|error"
+    # PE-M1: dsh emits `patch: entry "X" not found` for a mis-id'd patch
+    # (a silently unattached config) -- that says "not found", not "warn/error",
+    # so it slipped every gate. Catch it.
+    $warnings = $dump | Select-String -Pattern "warn|unmatched|error|not found"
     [pscustomobject]@{ Clean = ($exit -eq 0 -and -not $warnings); Exit = $exit; Warnings = $warnings; Raw = $dump }
 }
 
@@ -592,11 +606,21 @@ foreach ($icon in 'DeepSeek Harness', 'Mission Control') {
     Write-AuditRow "desktop icon '$icon'" (Test-Path "$U\Desktop\$icon.lnk")
 }
 
-# Row 5: subagent plugins in both profiles
+# Row 5: subagent plugins in both profiles -- present AND at the pinned version.
+# PE-M3 (gate 2026-08-21): the row used to check presence only, so a core
+# upgrade (this migration: rc.7 -> 0.1.1-rc.2) left the profile plugins at the
+# OLD version and the audit still said PASS -- silent core/plugin version skew.
+# $dshPkg is "@deepseek-ai/dsh@<pin>"; extract the pin and compare.
+$pinnedVer = ($dshPkg -split '@')[-1]
 foreach ($profile in 'web', 'headless') {
-    $missingPkgs = @('dsh-subagent-codex', 'dsh-subagent-claude-code', 'dsh-subagent-acp') |
-        Where-Object { -not (Test-Path "$U\.dsh\profiles\$profile\node_modules\@deepseek-ai\$_") }
-    Write-AuditRow "subagent plugins in profile '$profile'" ($missingPkgs.Count -eq 0) $(if ($missingPkgs) { "missing: $($missingPkgs -join ', ')" } else { 'codex + claude-code + acp' })
+    $problems = @()
+    foreach ($pkg in 'dsh-subagent-codex', 'dsh-subagent-claude-code', 'dsh-subagent-acp') {
+        $pj = "$U\.dsh\profiles\$profile\node_modules\@deepseek-ai\$pkg\package.json"
+        if (-not (Test-Path $pj)) { $problems += "$pkg missing"; continue }
+        $v = (Get-Content $pj -Raw | ConvertFrom-Json).version
+        if ($v -ne $pinnedVer) { $problems += "$pkg is $v, want $pinnedVer" }
+    }
+    Write-AuditRow "subagent plugins in profile '$profile' at $pinnedVer" ($problems.Count -eq 0) $(if ($problems) { ($problems -join '; ') + " -- reinstall: pnpm dlx $dshPkg plugin --profile $profile add ..." } else { 'codex + claude-code + acp, version-matched' })
 }
 
 # Manual-by-preference (never auto-enabled, only reported): cockpit autostart

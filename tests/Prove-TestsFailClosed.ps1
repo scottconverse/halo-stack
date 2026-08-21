@@ -84,6 +84,25 @@ if ($false) { exit 1 }' }
        from = 'Start-Process -PassThru -WindowStyle Hidden pnpm.cmd `'
        to   = 'Start-Process -PassThru -WindowStyle Hidden pnpm `' }
 
+    # TE-5 (gate 2026-08-21): the MIG1/MIG2 mutations above only touched
+    # Sync-FromLive.ps1 -- the one file where neither blind spot existed. These
+    # target the files that DID have the gaps: Deploy's $dshPkg-mediated npx
+    # call, and MC's DSH_VERSION_PIN constant.
+    @{ id = 'MIG1'; defect = 'TE-1: Deploy reverts a $dshPkg-mediated call back to npx (variable, not literal)'
+       file = 'scripts\Deploy-ToLive.ps1'
+       from = '$dump = pnpm dlx $dshPkg web --dump-config 2>&1'
+       to   = '$dump = npx $dshPkg web --dump-config 2>&1' }
+
+    @{ id = 'MIG2'; defect = 'TE-2: mission-control DSH_VERSION_PIN regresses to an older dsh'
+       file = 'mission-control\mission-control.mjs'
+       from = "const DSH_VERSION_PIN = '0.1.1-rc.2';"
+       to   = "const DSH_VERSION_PIN = '0.1.0-rc.7';" }
+
+    @{ id = 'A2'; defect = 'PE-M1: the job cap is put under the wrong patch id (jobs-local) so it never attaches'
+       file = 'dsh\cordis.patch.yml'
+       from = "- id: jobs`r`n  config:"
+       to   = "- id: jobs-local`r`n  config:" }
+
     @{ id = 'G1'; defect = 'a deployed AGENTS.md loses its SCOPE header (issue #35 prompt injection)'
        file = 'workspace\AGENTS.md'
        from = 'SCOPE: these instructions are for HALO-stack (DeepSeek Harness) sessions only.'

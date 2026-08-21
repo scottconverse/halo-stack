@@ -108,7 +108,6 @@ const PNPM_MJS = (() => {
 })();
 const EXE = {
   lms: resolveExe('lms', path.join(HOME, '.lmstudio', 'bin')),
-  npx: resolveExe('npx'),
   node: resolveExe('node') || process.execPath,
 };
 // A session that claims to be running but whose durable log has not advanced
@@ -2707,10 +2706,24 @@ const server = http.createServer(async (req, res) => {
         // node <pnpm.mjs> dlx ... -- shell-free, avoids the .cmd spawn EINVAL.
         const { stdout, stderr } = await safeExecFile('node', [PNPM_MJS, 'dlx', '@deepseek-ai/dsh@' + DSH_VERSION_PIN, 'web', '--dump-config'], { timeout: 300000, maxBuffer: 16 * 1024 * 1024 });
         const combined = `${stdout}\n${stderr}`;
-        const warnings = combined.split('\n').filter(l => /unmatched|warn/i.test(l)).map(l => l.trim()).filter(Boolean).slice(0, 50);
+        const warnings = combined.split('\n').filter(l => /unmatched|warn|not found|error/i.test(l)).map(l => l.trim()).filter(Boolean).slice(0, 50);
         result = { when: Date.now(), ok: warnings.length === 0, warnings };
       } catch (e) {
         result = { when: Date.now(), ok: false, warnings: [String(e.message || e).slice(0, 500)] };
+        // QA-RC8-2 (gate 2026-08-21): Node's child_process timeout kills only
+        // the direct child (node pnpm.mjs). Its descendants -- the cmd wrapper
+        // and the bin.js dump-config process -- survive on Windows. On a
+        // timeout, sweep any lingering dsh dump-config processes so a slow or
+        // wedged validation does not leak a process tree each time it is run.
+        if (/timeout|ETIMEDOUT/i.test(String(e.message || e))) {
+          try {
+            const { execFile } = await import('node:child_process');
+            // taskkill the dsh dump-config tree by command-line match, shell-free.
+            execFile('powershell', ['-NoProfile', '-Command',
+              "Get-CimInstance Win32_Process -Filter \"Name='node.exe' OR Name='cmd.exe'\" | Where-Object { $_.CommandLine -match 'deepseek-ai(/|\\\\)dsh' -and $_.CommandLine -match '--dump-config' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"],
+              { shell: false, timeout: 15000 }, () => {});
+          } catch { /* best-effort cleanup */ }
+        }
       }
       writeState({ lastValidation: result });
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(result)); return;

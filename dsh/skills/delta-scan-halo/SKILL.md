@@ -1,6 +1,6 @@
 ---
 name: delta-scan-halo
-description: Audit the HALO stack's upstream for changes worth acting on — harness releases past rc.7, fixes to the five known Windows bugs, new Qwen models and unsloth quants that fit this machine, llama.cpp engine changes, and community findings for Strix Halo. Produces a delta report with ACTIONABLE/WATCH/IGNORE verdicts and tracks scan state in the memory graph. Run weekly or on demand in a fresh session.
+description: Audit the HALO stack's upstream for changes worth acting on — harness releases past the current pin (0.1.1-rc.2), fixes to the five known Windows bugs, new Qwen models and unsloth quants that fit this machine, llama.cpp engine changes, and community findings for Strix Halo. Produces a delta report with ACTIONABLE/WATCH/IGNORE verdicts and tracks scan state in the memory graph. Run weekly or on demand in a fresh session.
 user-invocable: true
 ---
 
@@ -75,7 +75,7 @@ reddit.com content — a licensing hole — and Jina's reader is blocked by Redd
 ## Delta criteria
 - Report only items newer than the last scan date from `halo-monitor-state`
   (baseline run: everything notable).
-- ACTIONABLE = fixes one of the five known bugs; a dsh release past rc.7 with
+- ACTIONABLE = fixes one of the five known bugs; a dsh release past the current pin (0.1.1-rc.2) with
   Windows fixes; a quant/model likely to beat current bench numbers at
   equal-or-smaller size; a security issue in anything we run.
 - Memory-layer upgrade watch (assessed 2026-08-17): current stock MCP graph

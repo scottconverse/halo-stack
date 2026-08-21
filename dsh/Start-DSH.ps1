@@ -49,12 +49,30 @@ New-Item -ItemType Directory -Force -Path $dshHome, "$dshHome\logs" | Out-Null
 "=== launch $(Get-Date -Format o) ===" | Out-File -FilePath $log -Encoding utf8
 
 $mutex = $null
+$script:dsh = $null
 function Release-Mutex {
     if ($script:mutex) { try { $script:mutex.ReleaseMutex() } catch { }; $script:mutex.Dispose(); $script:mutex = $null }
+}
+# PE-M2 (gate 2026-08-21): a failed launch used to abandon the pnpm dlx tree
+# still running in the background (a half-finished cold install, or a wedged
+# server), leaving the NEXT launch to clean it up -- so a slow first pull could
+# fail twice before succeeding. Kill the launcher process and its whole tree on
+# any loud failure. The tree is pnpm.mjs -> cmd -> node server; killing the
+# launcher PID plus any dsh-web children by the same pattern used for stale
+# cleanup leaves nothing behind.
+function Stop-DshTree {
+    if (-not $script:dsh) { return }
+    try {
+        $kids = @(Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='cmd.exe'" -ErrorAction SilentlyContinue |
+                  Where-Object { $_.CommandLine -and $_.CommandLine -match '(deepseek-ai(/|\\)dsh|\bdsh\b.{0,8}web)' -and $_.CommandLine -notmatch '(--dump-config|\bplugin\b)' })
+        foreach ($k in $kids) { Stop-Process -Id $k.ProcessId -Force -ErrorAction SilentlyContinue }
+        if (-not $script:dsh.HasExited) { Stop-Process -Id $script:dsh.Id -Force -ErrorAction SilentlyContinue }
+    } catch { }
 }
 function Fail-Loud([string]$message) {
     $message | Add-Content $log
     "Server output (if any): $serverLog" | Add-Content $log
+    Stop-DshTree
     Release-Mutex
     Start-Process notepad $log
     exit 1
@@ -189,7 +207,7 @@ if (Test-CockpitServing) {
     # --no-open: dsh opens the browser itself on start; suppress it so THIS
     # launcher stays the one that opens the browser LAST, only after the serving
     # check passes (otherwise a browser pops on a not-yet-ready or dead server).
-    $dsh = Start-Process -PassThru -WindowStyle Hidden pnpm.cmd `
+    $script:dsh = Start-Process -PassThru -WindowStyle Hidden pnpm.cmd `
         -ArgumentList 'dlx','"@deepseek-ai/dsh@0.1.1-rc.2"','web','--no-open' `
         -RedirectStandardOutput $serverLog -RedirectStandardError $serverErr
     "server launched via pnpm dlx, launcher PID $($dsh.Id); output -> $serverLog" | Add-Content $log
@@ -209,12 +227,12 @@ if (Test-CockpitServing) {
     $deadline = (Get-Date).AddSeconds(300)
     do {
         Start-Sleep -Seconds 3
-        # NOTE: $dsh is the `pnpm dlx` launcher process, which spawns a cmd
+        # NOTE: $dsh is the pnpm.cmd launcher process (pnpm.mjs), which spawns a cmd
         # wrapper and then the node server (verified: pnpm.mjs -> cmd -> bin.js).
         # Its exit is an early signal but not proof either way, so serving is
         # always decided by the HTTP check below.
         if ($dsh.HasExited -and -not (Test-CockpitServing)) {
-            "LAUNCH WRAPPER EXITED (code $($dsh.ExitCode)) and nothing is serving." | Add-Content $log
+            "PNPM LAUNCHER EXITED (code $($dsh.ExitCode)) and nothing is serving." | Add-Content $log
             Dump-ServerOutput
             Fail-Loud "Startup aborted: the harness never came up. Output captured above."
         }

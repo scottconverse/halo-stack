@@ -4,7 +4,7 @@ SCOPE: these instructions are for HALO-stack (DeepSeek Harness) sessions only.
 If you are a different agent working in this directory (e.g. CivicCast work,
 a Codex fleet session, a Claude Code session), ignore this file.
 
-You are running inside the HALO stack: DeepSeek Harness (pinned 0.1.0-rc.7) on
+You are running inside the HALO stack: DeepSeek Harness (pinned 0.1.1-rc.2) on
 Windows 11 / RTX 5070 Ti 16GB (CUDA), brain = Qwen3.8-27B Q3_K_XL (32K ctx,
 KV q8_0) via LM Studio at :1234, on-demand MoE worker, full-drive access. The
 stack's complete documentation, configs, and measured benchmarks live in

@@ -101,7 +101,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
     <div class="card"><h3><em>The worker</em>Qwen3 Coder 30B · MoE</h3>
       <p>Loads on demand with a 2-hour TTL, runs delegated subagent work at 4.3× the brain's task speed, one job at a time (the brain serves a single prediction, so work queues rather than fans out), then unloads and returns its ~16&nbsp;GB.</p>
       <p class="fig">Kept on-demand deliberately: both models share one memory bus, so residency is earned by benchmark, not assumed.</p></div>
-    <div class="card"><h3><em>The cockpit</em>DeepSeek Harness · pinned rc.7</h3>
+    <div class="card"><h3><em>The cockpit</em>DeepSeek Harness · pinned 0.1.1-rc.2</h3>
       <p>Web UI on localhost. Append-only session logs, automatic compaction, background jobs, skills, workflows — and full <code>C:\</code> access set by a single environment variable.</p>
       <p class="fig">Every session can delegate to Codex, Claude Code, and OpenCode (over ACP) as subagents, search the live web and read pages as markdown (keyed Exa MCP, ~1,400 funded searches/month) plus Reddit via a dedicated RSS skill, and persist facts to a memory graph that survives reboots.</p></div>
     <div class="card"><h3><em>The glass</em>Mission Control</h3>
@@ -118,7 +118,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
       <defs><marker id="lar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#6f9fc8"/></marker></defs>
       <rect class="node primary" x="420" y="14" rx="13" width="240" height="58"/><text class="svg-t" x="540" y="39" text-anchor="middle">Operator</text><text class="svg-c" x="540" y="58" text-anchor="middle">two desktop icons, zero terminals</text>
       <path class="arrow" d="M480 72 L330 118"/><path class="arrow" d="M600 72 L750 118"/>
-      <rect class="node primary" x="150" y="118" rx="13" width="340" height="84"/><text class="svg-t" x="320" y="146" text-anchor="middle">DeepSeek Harness cockpit · :3080</text><text class="svg-c" x="320" y="166" text-anchor="middle">pinned 0.1.0-rc.7 · halo-standard preset</text><text class="svg-c" x="320" y="184" text-anchor="middle">full-drive access via one env var</text>
+      <rect class="node primary" x="150" y="118" rx="13" width="340" height="84"/><text class="svg-t" x="320" y="146" text-anchor="middle">DeepSeek Harness cockpit · :3080</text><text class="svg-c" x="320" y="166" text-anchor="middle">pinned 0.1.1-rc.2 · halo-standard preset</text><text class="svg-c" x="320" y="184" text-anchor="middle">full-drive access via one env var</text>
       <rect class="node alt" x="620" y="118" rx="13" width="300" height="84"/><text class="svg-t" x="770" y="146" text-anchor="middle">OpenCode</text><text class="svg-c" x="770" y="166" text-anchor="middle">independent sibling UI</text><text class="svg-c" x="770" y="184" text-anchor="middle">same local model + cloud routes</text>
       <path class="arrow" d="M320 202 L480 258"/><path class="arrow" d="M770 202 L610 258"/>
       <rect class="node good" x="395" y="258" rx="13" width="290" height="66"/><text class="svg-t" x="540" y="284" text-anchor="middle">LM Studio API · :1234</text><text class="svg-c" x="540" y="304" text-anchor="middle">one iGPU, one memory bus, queued turns</text>
