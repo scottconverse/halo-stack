@@ -30,6 +30,15 @@ files:
     baseSha256: AC219637CFCD200DF435EA808D92A8D688D7B3F596EE58A7616DA7FA74CAA485
 
 replacements:
+  # -- context window: master advertises 131072 (HALO's window); this box's
+  # brain actually holds 32-40K (auto-sized). Advertising more than the model
+  # holds makes dsh sessions overrun real context. maxTokens capped to match.
+  - file: dsh\settings.yaml
+    find: "contextWindow: 131072"
+    replace: "contextWindow: 32768"
+  - file: dsh\settings.yaml
+    find: "maxTokens: 49152"
+    replace: "maxTokens: 8192"
   # -- identity: suffix everywhere so LM Link federation cannot cross-resolve --
   - file: dsh\settings.yaml
     find: "qwen/qwen3.8-27b"
