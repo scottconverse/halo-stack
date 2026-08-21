@@ -6,20 +6,23 @@
 # script makes sure a bad edit never reaches production, or if it briefly does,
 # self-heals within seconds instead of staying broken).
 # Machine-rebuild order after this: install Node 22+, LM Studio (+ the two GGUF
-# models), pnpm 11, then run the desktop launchers (they pin dsh 0.1.0-rc.7 via npx).
+# models), pnpm 11, then run the desktop launchers (they pin dsh 0.1.1-rc.2 via pnpm dlx).
 $repo = Split-Path $PSScriptRoot -Parent
 $U = $env:USERPROFILE
-$dshPkg = "@deepseek-ai/dsh@0.1.0-rc.7"
+$dshPkg = "@deepseek-ai/dsh@0.1.1-rc.2"
 
 # Prerequisites, named. Without this a missing Node surfaced 200 lines later as
 # "No js-yaml install found", sending a newcomer after a third-party YAML
 # library instead of the actual missing item -- which is step 1 of the README.
 # Command-discovery failures cannot be captured by 2>$null or *>>, so they have
 # to be checked by name rather than caught.
+# MIGRATION 2026-08-21: dsh is installed/run via `pnpm dlx`, not `npx`. npm 11's
+# resolver hangs indefinitely on this Node 25 box for every dsh version past
+# rc.7 (measured: resolution never completes, --dry-run included); pnpm's
+# resolver installs the same graph in ~50s. So pnpm is the required tool here.
 $prereqs = @(
     @{ name = 'node'; why = 'Install Node 22+ (README step 1).' }
-    @{ name = 'npm';  why = 'It ships with Node. Reinstall Node 22+ (README step 1).' }
-    @{ name = 'npx';  why = 'It ships with Node. Reinstall Node 22+ (README step 1).' }
+    @{ name = 'pnpm'; why = 'Install pnpm 11 (README step 1: "npm i -g pnpm"). The stack runs dsh via "pnpm dlx" because npm''s resolver hangs on this Node version.' }
     @{ name = 'lms';  why = 'Install LM Studio, then put its CLI on PATH (README step 1: "lms bootstrap"). The launcher and both model loaders shell out to it.' }
 )
 $missing = @($prereqs | Where-Object { -not (Get-Command $_.name -ErrorAction SilentlyContinue) })
@@ -69,14 +72,18 @@ $map = @(
 function Resolve-JsYamlOrBootstrap {
     $resolve = {
         $candidates = @("$U\.dsh\profiles\node_modules\js-yaml")
+        # npx cache (legacy) AND the pnpm store (MIGRATION: dsh installs via pnpm
+        # dlx now, so js-yaml lands under the pnpm content-addressed store).
         $candidates += Get-ChildItem "$U\AppData\Local\npm-cache\_npx\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+        $candidates += Get-ChildItem "$U\AppData\Local\pnpm\store\*\links\@\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+        $candidates += Get-ChildItem "$U\AppData\Local\pnpm-cache\dlx\*\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
         $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
     }
     $found = & $resolve
     if (-not $found) {
-        Write-Host "no js-yaml found - clean machine? bootstrapping the dsh profile (one-time npx run)..."
+        Write-Host "no js-yaml found - clean machine? bootstrapping the dsh profile (one-time pnpm dlx run)..."
         $env:DSH_PERMISSION_MODE = 'danger-full-access'
-        npx $dshPkg web --dump-config 2>&1 | Out-Null
+        pnpm dlx $dshPkg web --dump-config 2>&1 | Out-Null
         $found = & $resolve
     }
     return $found
@@ -133,7 +140,8 @@ function Invoke-DumpConfigGate {
     param([string]$AltHome = $null)
     if ($AltHome) { $env:DSH_HOME = $AltHome }
     $env:DSH_PERMISSION_MODE = 'danger-full-access'
-    $dump = npx $dshPkg web --dump-config 2>&1
+    # MIGRATION: pnpm dlx, not npx (npm resolver hangs on Node 25).
+    $dump = pnpm dlx $dshPkg web --dump-config 2>&1
     $exit = $LASTEXITCODE
     if ($AltHome) { Remove-Item Env:\DSH_HOME -ErrorAction SilentlyContinue }
     $warnings = $dump | Select-String -Pattern "warn|unmatched|error"
@@ -310,7 +318,7 @@ else { Write-Host "no drift - live matches or is older than repo everywhere" }
 Write-Host "`n== stage: pre-validate (YAML syntax) =="
 $jsYamlPath = Resolve-JsYamlOrBootstrap
 if (-not $jsYamlPath) {
-    Write-Error "No js-yaml install found even after bootstrapping dsh (checked dsh profile + npx cache glob). Aborting -- nothing live touched."
+    Write-Error "No js-yaml install found even after bootstrapping dsh (checked dsh profile + npx cache + pnpm store). Aborting -- nothing live touched."
     exit 1
 }
 $validatorScript = Join-Path $env:TEMP "dsh-deploy-yaml-validate.js"
@@ -606,4 +614,4 @@ if ($auditDeployCausedFailure) {
 if ($renderRoot) { Remove-Item -Recurse -Force $renderRoot -ErrorAction SilentlyContinue }
 
 Write-Host "`nDone. If any row above says MISSING, fix it from the README's install checklist."
-Write-Host "Subagent plugins per profile: npx @deepseek-ai/dsh@0.1.0-rc.7 plugin --profile <web|headless> add @deepseek-ai/dsh-subagent-codex@0.1.0-rc.7 @deepseek-ai/dsh-subagent-claude-code@0.1.0-rc.7 @deepseek-ai/dsh-subagent-acp@0.1.0-rc.7 @deepseek-ai/dsh-sdk-protocol@0.1.0-rc.7"
+Write-Host "Subagent plugins per profile: pnpm dlx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile <web|headless> add @deepseek-ai/dsh-subagent-codex@0.1.1-rc.2 @deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2 @deepseek-ai/dsh-subagent-acp@0.1.1-rc.2 @deepseek-ai/dsh-sdk-protocol@0.1.1-rc.2"

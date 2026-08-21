@@ -68,6 +68,22 @@ if ($false) { exit 1 }' }
        from = '<h1>Capable local coding agents. No cloud required for local-model work.</h1>'
        to   = '<h1>Frontier-class coding agents. No cloud required.</h1>' }
 
+    # MIGRATION 2026-08-21 defects.
+    @{ id = 'MIG1'; defect = 'a functional file goes back to installing dsh via npx (hangs on Node 25)'
+       file = 'scripts\Sync-FromLive.ps1'
+       from = '$dump = pnpm dlx "@deepseek-ai/dsh@0.1.1-rc.2" web --dump-config 2>&1'
+       to   = '$dump = npx "@deepseek-ai/dsh@0.1.1-rc.2" web --dump-config 2>&1' }
+
+    @{ id = 'MIG2'; defect = 'a partial version bump leaves one file pinned to an older dsh'
+       file = 'scripts\Sync-FromLive.ps1'
+       from = 'pnpm dlx "@deepseek-ai/dsh@0.1.1-rc.2" web --dump-config'
+       to   = 'pnpm dlx "@deepseek-ai/dsh@0.1.0-rc.7" web --dump-config' }
+
+    @{ id = 'MIG3'; defect = 'the launcher starts bare pnpm (pnpm.ps1) instead of pnpm.cmd -> blank PID, nothing serves'
+       file = 'dsh\Start-DSH.ps1'
+       from = 'Start-Process -PassThru -WindowStyle Hidden pnpm.cmd `'
+       to   = 'Start-Process -PassThru -WindowStyle Hidden pnpm `' }
+
     @{ id = 'G1'; defect = 'a deployed AGENTS.md loses its SCOPE header (issue #35 prompt injection)'
        file = 'workspace\AGENTS.md'
        from = 'SCOPE: these instructions are for HALO-stack (DeepSeek Harness) sessions only.'

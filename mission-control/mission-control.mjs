@@ -94,8 +94,18 @@ const LM_LINK_ACCOUNT_CACHE = path.join(HOME, '.lmstudio', '.internal', 'lm-link
 const LOADER_Q5 = path.join(HOME, '.lmstudio', 'scripts', 'Load-OpenCode-Qwen.mjs');
 const LOADER_WORKER = path.join(HOME, '.lmstudio', 'scripts', 'Load-Worker-Coder.mjs');
 const START_DSH = path.join(HOME, '.dsh', 'Start-DSH.ps1');
-const DSH_VERSION_PIN = '0.1.0-rc.7';
+const DSH_VERSION_PIN = '0.1.1-rc.2';
 // Resolved executables (needs HOME above). safeExecFile/safeSpawn read this.
+const NPM_GLOBAL = path.join(process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming'), 'npm');
+// MIGRATION 2026-08-21: pnpm's launchable entry on Windows is pnpm.CMD, but
+// Node's execFile with shell:false REFUSES to spawn a .cmd (spawn EINVAL, the
+// CVE-2024-27980 hardening). We cannot use shell:true here -- SEC1 forbids it
+// and this file is the RCE surface (PE-1). So run pnpm's real .mjs entry via
+// node instead, which is a plain script node can spawn shell-free.
+const PNPM_MJS = (() => {
+  const cand = path.join(NPM_GLOBAL, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs');
+  return fs.existsSync(cand) ? cand : null;
+})();
 const EXE = {
   lms: resolveExe('lms', path.join(HOME, '.lmstudio', 'bin')),
   npx: resolveExe('npx'),
@@ -2691,7 +2701,11 @@ const server = http.createServer(async (req, res) => {
       if (!actionAuthorized(req)) { res.writeHead(403); res.end('unauthorized: missing or invalid action token'); return; }
       let result;
       try {
-        const { stdout, stderr } = await safeExecFile('npx', ['@deepseek-ai/dsh@' + DSH_VERSION_PIN, 'web', '--dump-config'], { timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
+        // MIGRATION 2026-08-21: pnpm dlx, not npx (npm's resolver hangs on this Node
+        // 25 box for dsh past rc.7). 300s: a cold dlx pulls ~190 packages.
+        if (!PNPM_MJS) throw new Error('pnpm not found (expected node_modules/pnpm/bin/pnpm.mjs under the npm global dir)');
+        // node <pnpm.mjs> dlx ... -- shell-free, avoids the .cmd spawn EINVAL.
+        const { stdout, stderr } = await safeExecFile('node', [PNPM_MJS, 'dlx', '@deepseek-ai/dsh@' + DSH_VERSION_PIN, 'web', '--dump-config'], { timeout: 300000, maxBuffer: 16 * 1024 * 1024 });
         const combined = `${stdout}\n${stderr}`;
         const warnings = combined.split('\n').filter(l => /unmatched|warn/i.test(l)).map(l => l.trim()).filter(Boolean).slice(0, 50);
         result = { when: Date.now(), ok: warnings.length === 0, warnings };

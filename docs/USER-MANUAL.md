@@ -32,7 +32,7 @@ flowchart TD
     OP --> OC
 
     subgraph INTERACTIVE["Interactive surfaces"]
-        DSH["DeepSeek Harness cockpit · :3080<br/>pinned 0.1.0-rc.7 · halo-standard preset<br/>full-drive access via one env var"]
+        DSH["DeepSeek Harness cockpit · :3080<br/>pinned 0.1.1-rc.2 · halo-standard preset<br/>full-drive access via one env var"]
         OC["OpenCode<br/>independent sibling UI<br/>same local model + cloud routes"]
     end
 
@@ -91,7 +91,7 @@ flowchart LR
     D -- no --> E["Load via loader script<br/>logged, one retry"]
     D -- yes --> F
     E --> F{":3080 already<br/>serving?"}
-    F -- no --> G["Start harness<br/>(pinned npx)<br/>wait ≤3 min"]
+    F -- no --> G["Start harness<br/>(pnpm dlx, pinned)<br/>wait ≤3 min"]
     F -- yes --> Z["Open browser"]
     G --> Z
 ```
@@ -234,7 +234,7 @@ Verdicts (why the brain stays Standard-mode dense, why the worker is
 on-demand not resident) are recorded in `docs/phases/phase2-bench-results.md`
 §Verdicts and reconfirmed in `docs/phases/bench-day-2-results.md`.
 
-### 4. The kernel — DeepSeek Harness (pinned `0.1.0-rc.7`) on Cordis
+### 4. The kernel — DeepSeek Harness (pinned `0.1.1-rc.2`) on Cordis
 
 This is the layer worth going deep on if you're extending this stack.
 
@@ -522,7 +522,7 @@ incident and its lesson are told in `docs/AUDIT-cordis-concepts-2026-08-18.md`
 | Reddit RSS request pacing | ≥8 s between requests | `agents-skills/reddit-search/SKILL.md` |
 | Exa keyed free-tier volume | ~1,400 searches/month | `dsh/dot-env.template` |
 | Memory snapshot rotation | hourly, last 60 kept | `dsh/memory/Snapshot-Memory.ps1` |
-| Harness pin | `0.1.0-rc.7` | `docs/phases/pin-record.txt` |
+| Harness pin | `0.1.1-rc.2` | `docs/phases/pin-record.txt` |
 | Telemetry default | DISABLED, no SDK constructed | `docs/AUDIT-telemetry-2026-08-17.md` |
 | Live external sockets (audit time) | 1 (`127.0.0.1:1234` only) | `docs/AUDIT-telemetry-2026-08-17.md` |
 | Mission Control size | 1,308 lines, zero dependencies | `mission-control/mission-control.mjs` |
@@ -842,7 +842,7 @@ Full bug list with root causes: README §Known issues and `docs/phases/phase3-re
 - **Backups:** point-in-time snapshots live in
   `Documents\Codex\ConfigBackups\` (pin record, config dumps, phase results, `.dsh` home).
 - **Upgrading the harness:** deliberate act, never casual. Change the pin
-  (`0.1.0-rc.7`) in both launchers, re-run the Phase 1 smoke tests (repo discovery,
+  (`0.1.1-rc.2`) in both launchers, re-run the Phase 1 smoke tests (repo discovery,
   edit, test, outside-repo write), and re-check the six known bugs — preview releases
   move fast in both directions.
 - **Rebuild from nothing:** README §Workflow — install Node 22+, pnpm 11, LM Studio +
@@ -902,7 +902,7 @@ documented Windows workarounds (nothing new surfaced).
 math hardcoded 128 GiB (fixed — VRAM capacity now read from the driver
 registry, portable); the Models tab offered live Unload buttons on *remote*
 fleet models (fixed — UI hides controls and the endpoint refuses server-side);
-clean-machine deploy-order bug (run `npx @deepseek-ai/dsh@0.1.0-rc.7 web
+clean-machine deploy-order bug (run `pnpm dlx @deepseek-ai/dsh@0.1.1-rc.2 web
 --dump-config` once before first deploy — the YAML validator borrows js-yaml
 from the dsh profile install); eviction JIT-reloads the brain with server
 defaults, not the loader profile (measured 17.5 vs 49 tok/s — re-run the

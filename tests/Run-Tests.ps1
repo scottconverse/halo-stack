@@ -332,6 +332,39 @@ Test-Case 'R2' 'README tells the user how to make a .ps1 shortcut that actually 
 }
 
 # AGENTS.md deploys into a shared directory (issue #35).
+# MIGRATION 2026-08-21: dsh installs/runs via pnpm dlx, not npx (npm's resolver
+# hangs on this Node 25 box for every dsh version past rc.7).
+Test-Case 'MIG1' 'no functional file installs or runs dsh via npx (would hang on Node 25)' {
+    $bad = @()
+    foreach ($f in 'dsh\Start-DSH.ps1', 'scripts\Deploy-ToLive.ps1', 'scripts\Sync-FromLive.ps1', 'mission-control\mission-control.mjs') {
+        foreach ($line in Get-Content (Join-Path $repo $f)) {
+            if ($line -match '^\s*#' -or $line -match '^\s*//') { continue }
+            # An npx invocation that runs the dsh package is the hang path.
+            if ($line -match 'npx' -and $line -match 'deepseek-ai(/|\\)dsh') { $bad += "$f : $($line.Trim())" }
+        }
+    }
+    if ($bad.Count) { return ("still installs/runs dsh via npx: " + ($bad -join ' | ')) }
+    $true
+}
+Test-Case 'MIG2' 'the dsh version pin is identical across every functional file' {
+    $pins = @{}
+    foreach ($f in 'dsh\Start-DSH.ps1', 'scripts\Deploy-ToLive.ps1', 'scripts\Sync-FromLive.ps1', 'mission-control\mission-control.mjs') {
+        foreach ($m in [regex]::Matches((Get-Text $f), 'dsh@?[''"]?(0\.\d+\.\d+-rc\.\d+)')) { $pins[$m.Groups[1].Value] = $true }
+    }
+    $versions = @($pins.Keys)
+    if ($versions.Count -eq 0) { return 'no dsh version pin found in any functional file' }
+    if ($versions.Count -gt 1) { return "mixed dsh version pins across files: $($versions -join ', ') -- a partial bump" }
+    $true
+}
+Test-Case 'MIG3' 'the launcher starts pnpm via pnpm.cmd, not bare pnpm (which is pnpm.ps1)' {
+    $t = Get-Text 'dsh\Start-DSH.ps1'
+    # Start-Process on bare `pnpm` resolves to pnpm.ps1 and cannot launch a
+    # process (blank PID, nothing serves). Must be pnpm.cmd.
+    if ($t -match 'Start-Process[^\r\n]*\s(pnpm)(?!\.cmd)\b') { return 'Start-Process targets bare pnpm; on Windows that is pnpm.ps1 and will not launch a server -- use pnpm.cmd' }
+    if ($t -notmatch 'Start-Process[^\r\n]*pnpm\.cmd') { return 'launcher does not launch the server via pnpm.cmd' }
+    $true
+}
+
 # GATE-2026-08-21: tests for the defects the GauntletGate panel found.
 Test-Case 'SEC1' 'Mission Control runs no subprocess with shell:true (PE-1 RCE)' {
     $t = Get-Text 'mission-control\mission-control.mjs'

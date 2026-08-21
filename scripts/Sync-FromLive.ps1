@@ -46,7 +46,8 @@ foreach ($m in $map) {
 }
 Write-Host "`nValidating composed config (dsh --dump-config; watch for 'unmatched' warnings)..."
 $env:DSH_PERMISSION_MODE = 'danger-full-access'
-$dump = npx "@deepseek-ai/dsh@0.1.0-rc.7" web --dump-config 2>&1
+# MIGRATION 2026-08-21: pnpm dlx, not npx (npm resolver hangs on Node 25).
+$dump = pnpm dlx "@deepseek-ai/dsh@0.1.1-rc.2" web --dump-config 2>&1
 $warnings = $dump | Select-String -Pattern "warn|unmatched"
 if ($warnings) { Write-Warning "CONFIG WARNINGS:"; $warnings | ForEach-Object { Write-Warning $_.Line } }
 else { Write-Host "config composes clean - no unmatched patch targets" }

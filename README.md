@@ -9,7 +9,7 @@ orchestration, model lifecycle, Windows fixes, benchmarking, privacy
 validation, and upgrade discipline on top of DeepSeek's runtime.
 
 The complete configuration:
-**DeepSeek Harness (`dsh` pinned `0.1.0-rc.7`) + LM Studio (Qwen3.8-27B Q5 brain,
+**DeepSeek Harness (`dsh` pinned `0.1.1-rc.2`) + LM Studio (Qwen3.8-27B Q5 brain,
 Qwen3 Coder 30B MoE on-demand worker) + Mission Control v3 (tabbed console) +
 OpenCode config**, as designed, benchmarked, and documented starting 2026-08-17,
 now with a live-reconciling Cordis config layer, a transactional live deploy,
@@ -69,13 +69,18 @@ auth files are deliberately excluded from sync.
   script's final **audit stage** checks the resulting machine state row by row
   and prints PASS/MISSING — the [USER-MANUAL's system-state table](docs/USER-MANUAL.md)
   is the human-readable reference for the same rows.
-  1. Install **Node 22+**, **pnpm 11**, and **LM Studio**. Then put
-     LM Studio's CLI on PATH — the launcher and both loaders shell out to
-     `lms`, and without it the stack fails 60 seconds later blaming the
-     LM Studio API instead. Run LM Studio once, then from its install
-     directory: `.\\lms.exe bootstrap` (or use the app's
-     *Developer -> Install CLI* action). Verify with `lms --version`
-     in a NEW shell.
+  1. Install **Node 22+**, **pnpm 11**, and **LM Studio**. **pnpm is
+     load-bearing, not optional:** the stack installs and runs the harness with
+     `pnpm dlx @deepseek-ai/dsh@<pin>`, because npm's dependency resolver hangs
+     indefinitely on this box's Node version for every dsh release past rc.7
+     (measured 2026-08-21: `npm install` never completes, `--dry-run` included;
+     pnpm resolves the same graph in ~50 s). Install it with `npm i -g pnpm` and
+     verify `pnpm --version` in a NEW shell. Then put LM Studio's CLI on PATH —
+     the launcher and both loaders shell out to `lms`, and without it the stack
+     fails 60 seconds later blaming the LM Studio API instead. Run LM Studio
+     once, then from its install directory: `.\\lms.exe bootstrap` (or use the
+     app's *Developer -> Install CLI* action). Verify with `lms --version` in a
+     NEW shell.
   2. In LM Studio, download the two models:
      `unsloth/Qwen3.8-27B-UD-Q5_K_XL` and
      `unsloth/Qwen3-Coder-30B-A3B-Instruct-Q4_K_S` (verify file hashes against
@@ -87,7 +92,7 @@ auth files are deliberately excluded from sync.
   4. Bootstrap the harness once **before** the first deploy (creates
      `~\.dsh\profiles`, which the deploy's YAML validator needs — the deploy
      also self-bootstraps if you forget, but this makes it explicit):
-     `npx @deepseek-ai/dsh@0.1.0-rc.7 web --dump-config`
+     `pnpm dlx @deepseek-ai/dsh@0.1.1-rc.2 web --dump-config`
   5. **Check your hardware against the default profile first.** The
      default machine profile is `halo`, which is tuned for an AMD Strix
      Halo APU with 128 GiB of unified memory: a 21 GB Q5 brain at a
