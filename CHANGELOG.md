@@ -3,11 +3,18 @@
 All notable changes to this repository are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.6.0] - 2026-08-21
 
-Master is ahead of the newest tagged release below. These changes are merged
-but not yet cut into a version — they include fixes to defects that the tagged
-releases shipped with. Do not read the 0.5.0 entry as the state of the tree.
+Two things: the repository was made installable by anyone (it never was — the
+loaders imported an uncommitted SDK), and the harness moved off rc.7. Both
+arrived through adversarial review — a live "won't load" report, two
+clean-context audits, and two 5-role GauntletGate panels — and every fix is
+proven by a test that fails closed (34 tests, 21 mutations, all caught).
+
+The headline defect the second panel found: the background-job fan-out cap that
+was supposed to prevent the 2026-08-20 runaway **had never attached** — the
+patch named the wrong id and every validation gate missed the "not found" line.
+Fixed and gated.
 
 ### Changed
 - **Harness upgraded `0.1.0-rc.7` → `0.1.1-rc.2`, installed via `pnpm dlx` (not
