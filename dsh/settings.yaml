@@ -6,6 +6,13 @@ llm-pi-ai:
       api: openai-completions
       baseURL: http://127.0.0.1:1234/v1
       apiKeyEnv: LMSTUDIO_API_KEY
+      # Default is 300000 (5 min) — sized for a small window. It is now SHORTER
+      # than a healthy first token at depth: measured TTFT on this box 2026-08-20
+      # was 259s / 362s / 403s on ordinary review turns. The adapter was killing
+      # live requests, retrying, and re-prefilling the whole context each time
+      # (one session burned 2.4M input tokens on a single turn). Raised to cover
+      # worst-case prefill of a nearly-full 131,072 window.
+      streamIdleTimeoutMs: 1200000
       compat:
         thinkingFormat: qwen
         supportsReasoningEffort: true
@@ -40,3 +47,33 @@ ui-onboarding:
   welcomeNoticeVersion: 2026-08-13.1
 agent-presets:
   default: halo-standard
+
+# Compaction budgets, retuned for the 131,072 window (2026-08-20).
+#
+# The stock defaults (threshold 0.8, retain 0.16, summary maxTokens 8192) were
+# sized for a small window. At 131,072 they ask the summarizer to fold ~84,000
+# tokens into 8,192 — 10:1. It cannot, so every checkpoint returned
+# "summarization truncated at the token cap (incomplete checkpoint)", context
+# never actually shrank, the session immediately re-crossed the threshold, and
+# it compacted forever. Measured: 5 consecutive failed compactions in ONE turn,
+# 11.5 / 13.5 / 16.6 / 20.1 minutes each, ~95 minutes of pure treadmill.
+#
+# Raising maxTokens alone makes it WORSE: the brain decodes at ~11 tok/s, so
+# summary LENGTH is what costs the minutes (8192 tok ≈ 12 min — which is
+# exactly the observed compaction time). The fix is to shrink what must be
+# summarized, not to grow the summary:
+#   threshold 98,304  - retain 65,536  = 32,768 to summarize, into 12,288 (2.7:1)
+# Achievable in one pass, ~18 min worst case, and it actually completes.
+#
+# Compaction remains expensive at this window by nature. Treat it as a safety
+# net, not a workflow: bound work so it never fires (pipeline\run.ps1).
+#
+# retainRatio, NOT retainTokens: an absolute 65536 would exceed the 5070Ti
+# box's entire 40,448 window, so retain would be >= threshold and its deploy
+# would break. A ratio scales to whatever window the machine actually has
+# (HALO 131,072 -> retain 65,536; 5070Ti 32,768 -> retain 16,384). See #39.
+compaction-basic:
+  thresholdRatio: 0.75
+  retainRatio: 0.5
+  maxTokens: 12288
+  compactionRetries: 2
