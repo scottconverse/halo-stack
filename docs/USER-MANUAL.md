@@ -32,7 +32,7 @@ flowchart TD
     OP --> OC
 
     subgraph INTERACTIVE["Interactive surfaces"]
-        DSH["DeepSeek Harness cockpit · :3080<br/>pinned 0.1.0-rc.7 · halo-standard preset<br/>full-drive access via one env var"]
+        DSH["DeepSeek Harness cockpit · :3080<br/>pinned 0.1.1-rc.2 · halo-standard preset<br/>full-drive access via one env var"]
         OC["OpenCode<br/>independent sibling UI<br/>same local model + cloud routes"]
     end
 
@@ -91,7 +91,7 @@ flowchart LR
     D -- no --> E["Load via loader script<br/>logged, one retry"]
     D -- yes --> F
     E --> F{":3080 already<br/>serving?"}
-    F -- no --> G["Start harness<br/>(pinned npx)<br/>wait ≤3 min"]
+    F -- no --> G["Start harness<br/>(pnpm dlx, pinned)<br/>wait ≤3 min"]
     F -- yes --> Z["Open browser"]
     G --> Z
 ```
@@ -234,7 +234,7 @@ Verdicts (why the brain stays Standard-mode dense, why the worker is
 on-demand not resident) are recorded in `docs/phases/phase2-bench-results.md`
 §Verdicts and reconfirmed in `docs/phases/bench-day-2-results.md`.
 
-### 4. The kernel — DeepSeek Harness (pinned `0.1.0-rc.7`) on Cordis
+### 4. The kernel — DeepSeek Harness (pinned `0.1.1-rc.2`) on Cordis
 
 This is the layer worth going deep on if you're extending this stack.
 
@@ -290,14 +290,21 @@ session log is append-only, and compaction/pruning/plan-mode are all
 engineered as cache-safe surface replacements. This means prefill (the
 expensive prompt-reading step) is paid once per session, not once per turn
 — the 8.1× TTFT figure in §3 above is this invariant cashing out in a real
-measurement. Compaction is the one planned exception: at the 131,072-context
-brain's compaction settings (80% trigger / 16% retain / 8,192-token summary
-cap), a compaction event costs one deliberate re-prefill, measured at ~80 s
-in production shape (TTFT sequence: 157 s cold → 13 s cached → 80 s
-post-compaction).
+measurement. Compaction is the one planned exception. **Note (2026-08-21):**
+the original settings quoted here (80% trigger / 16% retain / 8,192-token
+summary cap) could **not** converge at the 131,072 window — they asked the
+summarizer to fold ~84,000 tokens into 8,192 (10:1), which truncated every
+time and re-triggered, producing the 2026-08-20 runaway (five failed
+compactions, ~95 minutes). The current settings are **75% trigger / 50% retain
+/ 12,288-token summary cap** (2.7:1), which converges in one pass; see
+`dsh/settings.yaml` for the authoritative values and the reasoning. Treat
+compaction as a safety net, not a routine step: bound work so it does not fire.
 
-**(f) Five known rc.7 Windows bugs and their workarounds** are already
-listed in the README and are not duplicated here.
+**(f) Five known Windows bugs and their workarounds** are already
+listed in the README and are not duplicated here. **These were verified on
+`0.1.0-rc.7`; re-verification against the current `0.1.1-rc.2` pin is pending
+(2026-08-21 migration) — some may already be fixed upstream. The workarounds are
+harmless if a bug is gone, so they stay documented until each is re-checked live.**
 
 **Proof:** the formal-model summary and the live reconciliation experiment
 are both in `docs/AUDIT-cordis-concepts-2026-08-18.md`. Config layering and
@@ -518,7 +525,7 @@ incident and its lesson are told in `docs/AUDIT-cordis-concepts-2026-08-18.md`
 | Reddit RSS request pacing | ≥8 s between requests | `agents-skills/reddit-search/SKILL.md` |
 | Exa keyed free-tier volume | ~1,400 searches/month | `dsh/dot-env.template` |
 | Memory snapshot rotation | hourly, last 60 kept | `dsh/memory/Snapshot-Memory.ps1` |
-| Harness pin | `0.1.0-rc.7` | `docs/phases/pin-record.txt` |
+| Harness pin | `0.1.1-rc.2` | `docs/phases/pin-record.txt` |
 | Telemetry default | DISABLED, no SDK constructed | `docs/AUDIT-telemetry-2026-08-17.md` |
 | Live external sockets (audit time) | 1 (`127.0.0.1:1234` only) | `docs/AUDIT-telemetry-2026-08-17.md` |
 | Mission Control size | 1,308 lines, zero dependencies | `mission-control/mission-control.mjs` |
@@ -527,7 +534,7 @@ incident and its lesson are told in `docs/AUDIT-cordis-concepts-2026-08-18.md`
 
 **Start:** double-click **DeepSeek Harness**. The launcher checks LM Studio, loads the
 Q5 brain if it isn't resident, starts the harness, and opens the browser only when the
-page will actually load. Cold boot after a reboot takes 1–3 minutes (npx + 21 GB model);
+page will actually load. Cold boot after a reboot takes 1–3 minutes (pnpm dlx + 21 GB model);
 if it's already running, the icon just opens the page. Nothing to babysit.
 
 **Stop:** close the browser tab (session is safe — it lives on the server), and if you
@@ -536,7 +543,7 @@ is a hidden process; it dies with logoff/reboot, or leave it running — it idle
 
 ## Using the cockpit
 
-- **New session:** pick workspace **Desktop-Code** (not C-Drive — known rc.7 bug: drive
+- **New session:** pick workspace **Desktop-Code** (not C-Drive — known Windows bug, verified on rc.7: drive
   roots never bind; your sessions have full-drive permission regardless of workspace).
   Preset defaults to **HALO Standard**; model defaults to the local Q5 at **Medium**
   reasoning. Both changeable per-session in the composer.
@@ -696,7 +703,7 @@ which measures this same number before every chunk.
 
 TTFT and decode dim on idle sessions, where they are history rather than live
 readings. Sessions opened on a drive root are hidden by default behind a
-labelled toggle: they are a known rc.7 bug and cannot bind a workspace at all.
+labelled toggle: they are a known Windows bug (verified on rc.7) and cannot bind a workspace at all.
 
 ### Plugins — finding the broken one
 
@@ -784,9 +791,20 @@ Creator-mode cockpit plugin — `docs/experiments/creator-mode-2026-08-18.md`.)
 | Typing doesn't paint / text overwrites itself | Stale pre-restart tab, or Chrome auto-translate | Close tab, open fresh one; keep translate disabled for the site |
 | "Deep diving…" for minutes | First-turn prefill, or queued behind another local request | Check Mission Control queue; it finishes — patience, not restart |
 | OpenCode on a cloud model unexpectedly | It raced the boot before the model loaded | Click the model name → pick "Local Daily Driver" |
-| Workspace won't select in composer | You picked C-Drive | Use Desktop-Code (rc.7 bug; permissions unaffected) |
+| Workspace won't select in composer | You picked C-Drive | Use Desktop-Code (known bug, verified on rc.7; permissions unaffected) |
 | Harness won't boot at all | A bad MCP/plugin row (e.g. BrowserMCP) | Check the row `disabled: true` flags in `~\.dsh\cordis.patch.yml` |
-| :3080 listening but frozen (0-byte responses, process alive) | Upstream Windows deadlock loading session logs >1 MB ([discussion 2165](https://github.com/deepseek-ai/deepseek-harness/discussions/2165), found by `/delta-scan-halo`) | Kill + relaunch via desktop icon; archive or move old session dirs out of `~\.dsh\sessions\` to keep logs small until fixed upstream |
+| :3080 listening but frozen (0-byte responses, process alive) | Upstream Windows deadlock loading session logs >1 MB ([discussion 2165](https://github.com/deepseek-ai/deepseek-harness/discussions/2165), found by `/delta-scan-halo`) | **The launcher now detects this itself** — its readiness check is an HTTP identity check, not a bare port check, so a frozen server is treated as not-serving and cleared on the next launch. If you hit it live, just double-click **DeepSeek Harness** again. To prevent it, keep `~\.dsh\sessions\` small (archive old session dirs). |
+
+**Mission Control operations (2026-08-21).** The console distinguishes three
+session states, not two: **running**, **idle**, and **STALLED** — a session the
+harness still reports as running but whose durable log has not advanced for 5+
+minutes. A stalled session trips the top (HARNESS) alarm with the elapsed time,
+because the harness's own `running` flag alone once showed a dead run as healthy
+for 4h41m. Each running session has a **Stop** button that cancels just that
+session through the harness (findings already written to disk are kept) instead
+of forcing you to kill the whole process. Launcher failures are captured to
+`~\.dsh\launcher.log` plus a per-run `~\.dsh\logs\dsh-server-<timestamp>.log`;
+both are pruned automatically by the deploy.
 
 Full bug list with root causes: README §Known issues and `docs/phases/phase3-reach-results.md`.
 
@@ -827,7 +845,7 @@ Full bug list with root causes: README §Known issues and `docs/phases/phase3-re
 - **Backups:** point-in-time snapshots live in
   `Documents\Codex\ConfigBackups\` (pin record, config dumps, phase results, `.dsh` home).
 - **Upgrading the harness:** deliberate act, never casual. Change the pin
-  (`0.1.0-rc.7`) in both launchers, re-run the Phase 1 smoke tests (repo discovery,
+  (`0.1.1-rc.2`) in both launchers, re-run the Phase 1 smoke tests (repo discovery,
   edit, test, outside-repo write), and re-check the six known bugs — preview releases
   move fast in both directions.
 - **Rebuild from nothing:** README §Workflow — install Node 22+, pnpm 11, LM Studio +
@@ -887,7 +905,7 @@ documented Windows workarounds (nothing new surfaced).
 math hardcoded 128 GiB (fixed — VRAM capacity now read from the driver
 registry, portable); the Models tab offered live Unload buttons on *remote*
 fleet models (fixed — UI hides controls and the endpoint refuses server-side);
-clean-machine deploy-order bug (run `npx @deepseek-ai/dsh@0.1.0-rc.7 web
+clean-machine deploy-order bug (run `pnpm dlx @deepseek-ai/dsh@0.1.1-rc.2 web
 --dump-config` once before first deploy — the YAML validator borrows js-yaml
 from the dsh profile install); eviction JIT-reloads the brain with server
 defaults, not the loader profile (measured 17.5 vs 49 tok/s — re-run the

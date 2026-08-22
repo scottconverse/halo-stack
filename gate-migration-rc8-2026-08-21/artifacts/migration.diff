@@ -1,0 +1,229 @@
+diff --git a/dsh/Start-DSH.ps1 b/dsh/Start-DSH.ps1
+index 755f26f..8fb6b7c 100644
+--- a/dsh/Start-DSH.ps1
++++ b/dsh/Start-DSH.ps1
+@@ -84,7 +84,13 @@ function Test-CockpitServing {
+ }
+ 
+ Require-Command 'node' 'Install Node 22+ (README step 1) and reopen the shortcut.'
+-Require-Command 'npx'  'It ships with Node. Reinstall Node 22+ (README step 1).'
++# MIGRATION 2026-08-21: the stack installs/runs dsh via `pnpm dlx`, not `npx`.
++# npm 11's dependency resolver hangs indefinitely on this Node 25 box for every
++# dsh version past rc.7 (measured: rc.8 and 0.1.1-rc.2 both never complete,
++# --dry-run included, so it is resolution not build); pnpm's resolver installs
++# the same graph in ~50s. dsh's own docs require Node ^22.19 || >=24, and this
++# box runs 25 -- so pnpm is the supported install path here, not a workaround.
++Require-Command 'pnpm' 'Install pnpm 11 (README step 1: "npm i -g pnpm"). The stack runs dsh via "pnpm dlx" because npm''s resolver hangs on this Node version.'
+ Require-Command 'lms'  'Install LM Studio, then run its CLI bootstrap so "lms" is on PATH (README step 1).'
+ 
+ # 1) LM Studio server up, and actually answering.
+@@ -131,12 +137,22 @@ if (-not (Test-BrainLoaded)) {
+ if (Test-CockpitServing) {
+     "cockpit already serving on :3080 - reusing it" | Add-Content $log
+ } else {
+-    # Items 10/11: match BOTH the node server and the cmd.exe running npx.cmd.
+-    # Only kill what is genuinely dead: a process listening on some other port
+-    # is a deliberate second instance and is left alone.
+-    $pattern = 'deepseek-ai(/|\\)dsh'
++    # Items 10/11 (+ MIGRATION): the pnpm dlx process tree has three parts --
++    # the `pnpm.mjs dlx @deepseek-ai/dsh@... web` launcher, a `cmd /c dsh web`
++    # wrapper, and the `...@deepseek-ai\dsh\...\lib\bin.js web` server. The
++    # launcher and server both carry "@deepseek-ai/dsh" + "web"; the cmd wrapper
++    # carries only "dsh" + "web". Match all three so no orphan survives, and
++    # still leave alone anything genuinely serving on another port (a deliberate
++    # second instance).
++    $pattern = '(deepseek-ai(/|\\)dsh.*\bweb\b)|(\bdsh\b.*\bweb\b.*(dlx|bin\.js|pnpm))|(\bdsh\b.{0,8}web)'
++    # PE-3 (gate 2026-08-21): a deploy validates by running
++    # `pnpm dlx @deepseek-ai/dsh@... web --dump-config` and installs plugins via
++    # `... plugin ... add` -- both carry "@deepseek-ai/dsh"+"web" and would be
++    # force-killed by this sweep if a launch raced a deploy. They serve no port,
++    # so the port-guard below does not save them. Exclude those transient
++    # non-server invocations explicitly.
+     $candidates = @(Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='cmd.exe'" -ErrorAction SilentlyContinue |
+-                    Where-Object { $_.CommandLine -and $_.CommandLine -match $pattern -and $_.CommandLine -match '\bweb\b' })
++                    Where-Object { $_.CommandLine -and $_.CommandLine -match $pattern -and $_.CommandLine -notmatch '(--dump-config|\bplugin\b)' })
+     foreach ($c in $candidates) {
+         $ports = @(Get-NetTCPConnection -State Listen -OwningProcess $c.ProcessId -ErrorAction SilentlyContinue)
+         $otherPort = @($ports | Where-Object { $_.LocalPort -ne 3080 })
+@@ -165,10 +181,18 @@ if (Test-CockpitServing) {
+     # Item 5/9: capture output, to a per-run file so concurrent or successive
+     # launches cannot overwrite the evidence. Two files: PowerShell refuses to
+     # redirect stdout and stderr to one path.
+-    $dsh = Start-Process -PassThru -WindowStyle Hidden npx.cmd `
+-        -ArgumentList '"@deepseek-ai/dsh@0.1.0-rc.7"','web' `
++    # MIGRATION: `pnpm dlx` (not npx) - see the pnpm Require-Command above.
++    # pnpm.cmd, NOT bare `pnpm`: on Windows `Get-Command pnpm` resolves to
++    # pnpm.ps1 (a script), and Start-Process cannot launch a .ps1 as a process
++    # -- it returns a blank PID and nothing serves. The batch shim pnpm.cmd is
++    # the launchable entry, exactly as the old code used npx.cmd.
++    # --no-open: dsh opens the browser itself on start; suppress it so THIS
++    # launcher stays the one that opens the browser LAST, only after the serving
++    # check passes (otherwise a browser pops on a not-yet-ready or dead server).
++    $dsh = Start-Process -PassThru -WindowStyle Hidden pnpm.cmd `
++        -ArgumentList 'dlx','"@deepseek-ai/dsh@0.1.1-rc.2"','web','--no-open' `
+         -RedirectStandardOutput $serverLog -RedirectStandardError $serverErr
+-    "server launched, wrapper PID $($dsh.Id); output -> $serverLog" | Add-Content $log
++    "server launched via pnpm dlx, launcher PID $($dsh.Id); output -> $serverLog" | Add-Content $log
+ 
+     function Dump-ServerOutput {
+         foreach ($f in @($serverErr, $serverLog)) {
+@@ -179,14 +203,16 @@ if (Test-CockpitServing) {
+         }
+     }
+ 
+-    # 180s covers a cold npx download on a slow connection.
++    # 300s covers a cold pnpm dlx download (first run of a new version pulls
++    # ~190 packages; ~50s warm, longer cold on a slow connection).
+     $serving = $false
+-    $deadline = (Get-Date).AddSeconds(180)
++    $deadline = (Get-Date).AddSeconds(300)
+     do {
+         Start-Sleep -Seconds 3
+-        # NOTE: $dsh is the cmd.exe wrapper around npx.cmd, not the node server
+-        # (verified). Its exit is a useful early signal but not proof either
+-        # way, so serving is always decided by the HTTP check below.
++        # NOTE: $dsh is the `pnpm dlx` launcher process, which spawns a cmd
++        # wrapper and then the node server (verified: pnpm.mjs -> cmd -> bin.js).
++        # Its exit is an early signal but not proof either way, so serving is
++        # always decided by the HTTP check below.
+         if ($dsh.HasExited -and -not (Test-CockpitServing)) {
+             "LAUNCH WRAPPER EXITED (code $($dsh.ExitCode)) and nothing is serving." | Add-Content $log
+             Dump-ServerOutput
+@@ -197,7 +223,7 @@ if (Test-CockpitServing) {
+ 
+     if (-not $serving) {
+         $listening = [bool](Get-NetTCPConnection -LocalPort 3080 -State Listen -ErrorAction SilentlyContinue)
+-        "DSH NEVER SERVED after 180s. Port 3080 listening: $listening" | Add-Content $log
++        "DSH NEVER SERVED after 300s. Port 3080 listening: $listening" | Add-Content $log
+         if ($listening) { "  Port is held but the page does not answer - wedged server (known rc.7 defect with sessions >1MB), or a different app owns 3080." | Add-Content $log }
+         Dump-ServerOutput
+         Fail-Loud "Startup failed. Not opening a browser at a dead port."
+diff --git a/mission-control/mission-control.mjs b/mission-control/mission-control.mjs
+index 940c6d3..42bcf50 100644
+--- a/mission-control/mission-control.mjs
++++ b/mission-control/mission-control.mjs
+@@ -94,8 +94,18 @@ const LM_LINK_ACCOUNT_CACHE = path.join(HOME, '.lmstudio', '.internal', 'lm-link
+ const LOADER_Q5 = path.join(HOME, '.lmstudio', 'scripts', 'Load-OpenCode-Qwen.mjs');
+ const LOADER_WORKER = path.join(HOME, '.lmstudio', 'scripts', 'Load-Worker-Coder.mjs');
+ const START_DSH = path.join(HOME, '.dsh', 'Start-DSH.ps1');
+-const DSH_VERSION_PIN = '0.1.0-rc.7';
++const DSH_VERSION_PIN = '0.1.1-rc.2';
+ // Resolved executables (needs HOME above). safeExecFile/safeSpawn read this.
++const NPM_GLOBAL = path.join(process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming'), 'npm');
++// MIGRATION 2026-08-21: pnpm's launchable entry on Windows is pnpm.CMD, but
++// Node's execFile with shell:false REFUSES to spawn a .cmd (spawn EINVAL, the
++// CVE-2024-27980 hardening). We cannot use shell:true here -- SEC1 forbids it
++// and this file is the RCE surface (PE-1). So run pnpm's real .mjs entry via
++// node instead, which is a plain script node can spawn shell-free.
++const PNPM_MJS = (() => {
++  const cand = path.join(NPM_GLOBAL, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs');
++  return fs.existsSync(cand) ? cand : null;
++})();
+ const EXE = {
+   lms: resolveExe('lms', path.join(HOME, '.lmstudio', 'bin')),
+   npx: resolveExe('npx'),
+@@ -2691,7 +2701,11 @@ const server = http.createServer(async (req, res) => {
+       if (!actionAuthorized(req)) { res.writeHead(403); res.end('unauthorized: missing or invalid action token'); return; }
+       let result;
+       try {
+-        const { stdout, stderr } = await safeExecFile('npx', ['@deepseek-ai/dsh@' + DSH_VERSION_PIN, 'web', '--dump-config'], { timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
++        // MIGRATION 2026-08-21: pnpm dlx, not npx (npm's resolver hangs on this Node
++        // 25 box for dsh past rc.7). 300s: a cold dlx pulls ~190 packages.
++        if (!PNPM_MJS) throw new Error('pnpm not found (expected node_modules/pnpm/bin/pnpm.mjs under the npm global dir)');
++        // node <pnpm.mjs> dlx ... -- shell-free, avoids the .cmd spawn EINVAL.
++        const { stdout, stderr } = await safeExecFile('node', [PNPM_MJS, 'dlx', '@deepseek-ai/dsh@' + DSH_VERSION_PIN, 'web', '--dump-config'], { timeout: 300000, maxBuffer: 16 * 1024 * 1024 });
+         const combined = `${stdout}\n${stderr}`;
+         const warnings = combined.split('\n').filter(l => /unmatched|warn/i.test(l)).map(l => l.trim()).filter(Boolean).slice(0, 50);
+         result = { when: Date.now(), ok: warnings.length === 0, warnings };
+diff --git a/scripts/Deploy-ToLive.ps1 b/scripts/Deploy-ToLive.ps1
+index 033899c..d86ddfa 100644
+--- a/scripts/Deploy-ToLive.ps1
++++ b/scripts/Deploy-ToLive.ps1
+@@ -6,20 +6,23 @@
+ # script makes sure a bad edit never reaches production, or if it briefly does,
+ # self-heals within seconds instead of staying broken).
+ # Machine-rebuild order after this: install Node 22+, LM Studio (+ the two GGUF
+-# models), pnpm 11, then run the desktop launchers (they pin dsh 0.1.0-rc.7 via npx).
++# models), pnpm 11, then run the desktop launchers (they pin dsh 0.1.1-rc.2 via pnpm dlx).
+ $repo = Split-Path $PSScriptRoot -Parent
+ $U = $env:USERPROFILE
+-$dshPkg = "@deepseek-ai/dsh@0.1.0-rc.7"
++$dshPkg = "@deepseek-ai/dsh@0.1.1-rc.2"
+ 
+ # Prerequisites, named. Without this a missing Node surfaced 200 lines later as
+ # "No js-yaml install found", sending a newcomer after a third-party YAML
+ # library instead of the actual missing item -- which is step 1 of the README.
+ # Command-discovery failures cannot be captured by 2>$null or *>>, so they have
+ # to be checked by name rather than caught.
++# MIGRATION 2026-08-21: dsh is installed/run via `pnpm dlx`, not `npx`. npm 11's
++# resolver hangs indefinitely on this Node 25 box for every dsh version past
++# rc.7 (measured: resolution never completes, --dry-run included); pnpm's
++# resolver installs the same graph in ~50s. So pnpm is the required tool here.
+ $prereqs = @(
+     @{ name = 'node'; why = 'Install Node 22+ (README step 1).' }
+-    @{ name = 'npm';  why = 'It ships with Node. Reinstall Node 22+ (README step 1).' }
+-    @{ name = 'npx';  why = 'It ships with Node. Reinstall Node 22+ (README step 1).' }
++    @{ name = 'pnpm'; why = 'Install pnpm 11 (README step 1: "npm i -g pnpm"). The stack runs dsh via "pnpm dlx" because npm''s resolver hangs on this Node version.' }
+     @{ name = 'lms';  why = 'Install LM Studio, then put its CLI on PATH (README step 1: "lms bootstrap"). The launcher and both model loaders shell out to it.' }
+ )
+ $missing = @($prereqs | Where-Object { -not (Get-Command $_.name -ErrorAction SilentlyContinue) })
+@@ -69,14 +72,18 @@ $map = @(
+ function Resolve-JsYamlOrBootstrap {
+     $resolve = {
+         $candidates = @("$U\.dsh\profiles\node_modules\js-yaml")
++        # npx cache (legacy) AND the pnpm store (MIGRATION: dsh installs via pnpm
++        # dlx now, so js-yaml lands under the pnpm content-addressed store).
+         $candidates += Get-ChildItem "$U\AppData\Local\npm-cache\_npx\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
++        $candidates += Get-ChildItem "$U\AppData\Local\pnpm\store\*\links\@\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
++        $candidates += Get-ChildItem "$U\AppData\Local\pnpm-cache\dlx\*\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+         $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+     }
+     $found = & $resolve
+     if (-not $found) {
+-        Write-Host "no js-yaml found - clean machine? bootstrapping the dsh profile (one-time npx run)..."
++        Write-Host "no js-yaml found - clean machine? bootstrapping the dsh profile (one-time pnpm dlx run)..."
+         $env:DSH_PERMISSION_MODE = 'danger-full-access'
+-        npx $dshPkg web --dump-config 2>&1 | Out-Null
++        pnpm dlx $dshPkg web --dump-config 2>&1 | Out-Null
+         $found = & $resolve
+     }
+     return $found
+@@ -133,7 +140,8 @@ function Invoke-DumpConfigGate {
+     param([string]$AltHome = $null)
+     if ($AltHome) { $env:DSH_HOME = $AltHome }
+     $env:DSH_PERMISSION_MODE = 'danger-full-access'
+-    $dump = npx $dshPkg web --dump-config 2>&1
++    # MIGRATION: pnpm dlx, not npx (npm resolver hangs on Node 25).
++    $dump = pnpm dlx $dshPkg web --dump-config 2>&1
+     $exit = $LASTEXITCODE
+     if ($AltHome) { Remove-Item Env:\DSH_HOME -ErrorAction SilentlyContinue }
+     $warnings = $dump | Select-String -Pattern "warn|unmatched|error"
+@@ -310,7 +318,7 @@ else { Write-Host "no drift - live matches or is older than repo everywhere" }
+ Write-Host "`n== stage: pre-validate (YAML syntax) =="
+ $jsYamlPath = Resolve-JsYamlOrBootstrap
+ if (-not $jsYamlPath) {
+-    Write-Error "No js-yaml install found even after bootstrapping dsh (checked dsh profile + npx cache glob). Aborting -- nothing live touched."
++    Write-Error "No js-yaml install found even after bootstrapping dsh (checked dsh profile + npx cache + pnpm store). Aborting -- nothing live touched."
+     exit 1
+ }
+ $validatorScript = Join-Path $env:TEMP "dsh-deploy-yaml-validate.js"
+@@ -606,4 +614,4 @@ if ($auditDeployCausedFailure) {
+ if ($renderRoot) { Remove-Item -Recurse -Force $renderRoot -ErrorAction SilentlyContinue }
+ 
+ Write-Host "`nDone. If any row above says MISSING, fix it from the README's install checklist."
+-Write-Host "Subagent plugins per profile: npx @deepseek-ai/dsh@0.1.0-rc.7 plugin --profile <web|headless> add @deepseek-ai/dsh-subagent-codex@0.1.0-rc.7 @deepseek-ai/dsh-subagent-claude-code@0.1.0-rc.7 @deepseek-ai/dsh-subagent-acp@0.1.0-rc.7 @deepseek-ai/dsh-sdk-protocol@0.1.0-rc.7"
++Write-Host "Subagent plugins per profile: pnpm dlx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile <web|headless> add @deepseek-ai/dsh-subagent-codex@0.1.1-rc.2 @deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2 @deepseek-ai/dsh-subagent-acp@0.1.1-rc.2 @deepseek-ai/dsh-sdk-protocol@0.1.1-rc.2"
+diff --git a/scripts/Sync-FromLive.ps1 b/scripts/Sync-FromLive.ps1
+index 316b10e..8047704 100644
+--- a/scripts/Sync-FromLive.ps1
++++ b/scripts/Sync-FromLive.ps1
+@@ -46,7 +46,8 @@ foreach ($m in $map) {
+ }
+ Write-Host "`nValidating composed config (dsh --dump-config; watch for 'unmatched' warnings)..."
+ $env:DSH_PERMISSION_MODE = 'danger-full-access'
+-$dump = npx "@deepseek-ai/dsh@0.1.0-rc.7" web --dump-config 2>&1
++# MIGRATION 2026-08-21: pnpm dlx, not npx (npm resolver hangs on Node 25).
++$dump = pnpm dlx "@deepseek-ai/dsh@0.1.1-rc.2" web --dump-config 2>&1
+ $warnings = $dump | Select-String -Pattern "warn|unmatched"
+ if ($warnings) { Write-Warning "CONFIG WARNINGS:"; $warnings | ForEach-Object { Write-Warning $_.Line } }
+ else { Write-Host "config composes clean - no unmatched patch targets" }

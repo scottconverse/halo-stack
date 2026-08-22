@@ -3,6 +3,79 @@
 All notable changes to this repository are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] - 2026-08-21
+
+Two things: the repository was made installable by anyone (it never was — the
+loaders imported an uncommitted SDK), and the harness moved off rc.7. Both
+arrived through adversarial review — a live "won't load" report, two
+clean-context audits, and two 5-role GauntletGate panels — and every fix is
+proven by a test that fails closed (34 tests, 21 mutations, all caught).
+
+The headline defect the second panel found: the background-job fan-out cap that
+was supposed to prevent the 2026-08-20 runaway **had never attached** — the
+patch named the wrong id and every validation gate missed the "not found" line.
+Fixed and gated.
+
+### Changed
+- **Harness upgraded `0.1.0-rc.7` → `0.1.1-rc.2`, installed via `pnpm dlx` (not
+  `npx`).** npm 11's dependency resolver hangs indefinitely on this box's Node
+  version for every dsh release past rc.7 — `npm install` never completes,
+  `--dry-run` included, so it is resolution, not a build script. pnpm's resolver
+  installs the same graph in ~50 s and `pnpm dlx … web` serves a working cockpit.
+  Every install/run path (launcher, deploy validation, sync, Mission Control's
+  validate-config) now uses pnpm. Two Windows-specific gotchas handled: the
+  launcher starts `pnpm.cmd` (bare `pnpm` resolves to `pnpm.ps1`, which
+  `Start-Process` cannot launch), and Mission Control runs pnpm's `.mjs` entry
+  via node (Node's `execFile` refuses to spawn a `.cmd` shell-free — the
+  CVE-2024-27980 hardening — and shell:true is barred here as the RCE surface).
+  Verified live: deploy validation gate green, launcher cold-starts and serves
+  0.1.1-rc.2, reuse path spawns nothing, 172 plugins compose with 0 failures and
+  all subagent providers active. Tests MIG1/MIG2/MIG3 guard the mechanism.
+
+### Fixed
+- **The repository could not load a model on any machine but the author's.**
+  The loader scripts imported a vendored `@lmstudio/sdk` that was never
+  committed; every clone failed with `MODULE_NOT_FOUND`. Now the stock public
+  SDK, pinned and installed by the deploy, with a wire-level shim for the
+  fields the published SDK drops. (This is why 0.1.0–0.5.0 worked only in
+  place.)
+- **Loader reported a *successful* model load as a failure** when its
+  verification subprocess (`lms ps`) threw — causing a redundant full model
+  reload. Verification now falls back through the SDK and reports UNVERIFIED
+  rather than failing a load that succeeded.
+- **Remote code execution in Mission Control.** The model load/unload action
+  endpoints passed request-body strings into `spawn(..., {shell:true})` with no
+  authentication — reachable by CSRF from any page the operator's browser had
+  open. Now: no shell, argv vectors only, a per-boot action token plus a
+  same-origin check on every state-changing POST, and catalog validation of
+  model identifiers.
+- **The author's username was hardcoded** into four deployed config files;
+  now derived from `$USERPROFILE`.
+- Both launchers rewrote to capture the server's own output, identity-check
+  HTTP readiness, refuse to open a browser on a dead port, and guard against a
+  double-launch race.
+- The machine-identity marker is now written only after post-deploy validation
+  succeeds, so a rolled-back deploy cannot leave a poisoned identity.
+- The deploy's audit now checks *where* the memory-snapshot task points, not
+  just that it exists; backups and per-run logs are pruned instead of growing
+  unbounded.
+
+### Added
+- Concurrency, retry, and compaction caps to prevent the 2026-08-20 runaway
+  (one turn, 4h41m, 2.4M input tokens): workflow engine `maxConcurrentAgents`,
+  a per-owner background-job cap, `retryPolicy.maxRetries`, and retuned
+  compaction budgets that actually converge at the 131,072 window.
+- Mission Control derives a STALLED state from wall-clock progress instead of
+  relaying the harness `running` flag (which showed a dead run as healthy for
+  4h41m), and a per-session Stop control.
+- A test suite (`tests/Run-Tests.ps1`) with a mutation harness
+  (`tests/Prove-TestsFailClosed.ps1`) that proves each check can actually fail.
+
+### Corrected
+- Public site/README claims that the measurements do not support (fan-out
+  speed, cross-machine routing, "frontier-class", compaction continuity at
+  131,072) were removed or qualified, and an honest-status disclosure added.
+
 ## [0.5.0] - 2026-08-20
 
 A deploy shipped one machine's instructions to another machine and an

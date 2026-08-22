@@ -6,10 +6,35 @@
 # script makes sure a bad edit never reaches production, or if it briefly does,
 # self-heals within seconds instead of staying broken).
 # Machine-rebuild order after this: install Node 22+, LM Studio (+ the two GGUF
-# models), pnpm 11, then run the desktop launchers (they pin dsh 0.1.0-rc.7 via npx).
+# models), pnpm 11, then run the desktop launchers (they pin dsh 0.1.1-rc.2 via pnpm dlx).
 $repo = Split-Path $PSScriptRoot -Parent
 $U = $env:USERPROFILE
-$dshPkg = "@deepseek-ai/dsh@0.1.0-rc.7"
+$dshPkg = "@deepseek-ai/dsh@0.1.1-rc.2"
+
+# Prerequisites, named. Without this a missing Node surfaced 200 lines later as
+# "No js-yaml install found", sending a newcomer after a third-party YAML
+# library instead of the actual missing item -- which is step 1 of the README.
+# Command-discovery failures cannot be captured by 2>$null or *>>, so they have
+# to be checked by name rather than caught.
+# MIGRATION 2026-08-21: dsh is installed/run via `pnpm dlx`, not `npx`. npm 11's
+# resolver hangs indefinitely on this Node 25 box for every dsh version past
+# rc.7 (measured: resolution never completes, --dry-run included); pnpm's
+# resolver installs the same graph in ~50s. So pnpm is the required tool here.
+$prereqs = @(
+    @{ name = 'node'; why = 'Install Node 22+ (README step 1).' }
+    @{ name = 'pnpm'; why = 'Install pnpm 11 (README step 1: "npm i -g pnpm"). The stack runs dsh via "pnpm dlx" because npm''s resolver hangs on this Node version.' }
+    # PE-N3 (gate 2026-08-21): npm is still shelled out below to install the
+    # LM Studio SDK (`& npm install` in the lmstudio-SDK stage), so it remains a
+    # hard prerequisite even though dsh itself now installs via pnpm.
+    @{ name = 'npm';  why = 'Ships with Node; the deploy uses "npm install" for the LM Studio SDK. Reinstall Node 22+ (README step 1).' }
+    @{ name = 'lms';  why = 'Install LM Studio, then put its CLI on PATH (README step 1: "lms bootstrap"). The launcher and both model loaders shell out to it.' }
+)
+$missing = @($prereqs | Where-Object { -not (Get-Command $_.name -ErrorAction SilentlyContinue) })
+if ($missing.Count -gt 0) {
+    foreach ($m in $missing) { Write-Host "MISSING PREREQUISITE: '$($m.name)' is not on PATH. $($m.why)" -ForegroundColor Red }
+    Write-Error "Deploy aborted before touching anything: $($missing.Count) prerequisite(s) missing."
+    exit 1
+}
 
 # DEPLOY_DRYRUN=1 runs machine resolution, profile render and the scope gate,
 # reports what WOULD be written, and stops before touching anything live. This
@@ -36,6 +61,7 @@ $map = @(
     @{ src = "dsh\memory\Snapshot-Memory.ps1";      dst = "$U\.dsh\memory\Snapshot-Memory.ps1" }
     @{ src = "agents-skills\reddit-search\SKILL.md"; dst = "$U\.agents\skills\reddit-search\SKILL.md" }
     @{ src = "workspace\AGENTS.md";                  dst = "$U\Desktop\Code\AGENTS.md" }
+    @{ src = "lmstudio\package.json";            dst = "$U\.lmstudio\scripts\package.json" }
     @{ src = "lmstudio\Load-OpenCode-Qwen.mjs";  dst = "$U\.lmstudio\scripts\Load-OpenCode-Qwen.mjs" }
     @{ src = "lmstudio\Load-Worker-Coder.mjs";   dst = "$U\.lmstudio\scripts\Load-Worker-Coder.mjs" }
     @{ src = "lmstudio\Sweep-MTP.mjs";           dst = "$U\.lmstudio\scripts\Sweep-MTP.mjs" }
@@ -50,14 +76,25 @@ $map = @(
 function Resolve-JsYamlOrBootstrap {
     $resolve = {
         $candidates = @("$U\.dsh\profiles\node_modules\js-yaml")
+        # npx cache (legacy) AND the pnpm store (MIGRATION: dsh installs via pnpm
+        # dlx now, so js-yaml lands under the pnpm content-addressed store).
+        # TE-3 (gate 2026-08-21): the store path is
+        # store\<v>\links\@\js-yaml\<version>\<hash>\node_modules\js-yaml -- the
+        # module is 3 levels below links\@\js-yaml, not AT it. The earlier glob
+        # stopped at links\@\js-yaml (a dir holding only "<version>\"), which is
+        # not require-able; Test-Path accepted it and skipped the bootstrap.
+        # Glob to the real module dir, and accept a candidate ONLY if it has a
+        # package.json, so a bare directory can never win.
         $candidates += Get-ChildItem "$U\AppData\Local\npm-cache\_npx\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
-        $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        $candidates += Get-ChildItem "$U\AppData\Local\pnpm\store\*\links\@\js-yaml\*\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+        $candidates += Get-ChildItem "$U\AppData\Local\pnpm-cache\dlx\*\*\node_modules\js-yaml" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+        $candidates | Where-Object { $_ -and (Test-Path (Join-Path $_ 'package.json')) } | Select-Object -First 1
     }
     $found = & $resolve
     if (-not $found) {
-        Write-Host "no js-yaml found - clean machine? bootstrapping the dsh profile (one-time npx run)..."
+        Write-Host "no js-yaml found - clean machine? bootstrapping the dsh profile (one-time pnpm dlx run)..."
         $env:DSH_PERMISSION_MODE = 'danger-full-access'
-        npx $dshPkg web --dump-config 2>&1 | Out-Null
+        pnpm dlx $dshPkg web --dump-config 2>&1 | Out-Null
         $found = & $resolve
     }
     return $found
@@ -114,10 +151,14 @@ function Invoke-DumpConfigGate {
     param([string]$AltHome = $null)
     if ($AltHome) { $env:DSH_HOME = $AltHome }
     $env:DSH_PERMISSION_MODE = 'danger-full-access'
-    $dump = npx $dshPkg web --dump-config 2>&1
+    # MIGRATION: pnpm dlx, not npx (npm resolver hangs on Node 25).
+    $dump = pnpm dlx $dshPkg web --dump-config 2>&1
     $exit = $LASTEXITCODE
     if ($AltHome) { Remove-Item Env:\DSH_HOME -ErrorAction SilentlyContinue }
-    $warnings = $dump | Select-String -Pattern "warn|unmatched|error"
+    # PE-M1: dsh emits `patch: entry "X" not found` for a mis-id'd patch
+    # (a silently unattached config) -- that says "not found", not "warn/error",
+    # so it slipped every gate. Catch it.
+    $warnings = $dump | Select-String -Pattern "warn|unmatched|error|not found"
     [pscustomobject]@{ Clean = ($exit -eq 0 -and -not $warnings); Exit = $exit; Warnings = $warnings; Raw = $dump }
 }
 
@@ -291,7 +332,7 @@ else { Write-Host "no drift - live matches or is older than repo everywhere" }
 Write-Host "`n== stage: pre-validate (YAML syntax) =="
 $jsYamlPath = Resolve-JsYamlOrBootstrap
 if (-not $jsYamlPath) {
-    Write-Error "No js-yaml install found even after bootstrapping dsh (checked dsh profile + npx cache glob). Aborting -- nothing live touched."
+    Write-Error "No js-yaml install found even after bootstrapping dsh (checked dsh profile + npx cache + pnpm store). Aborting -- nothing live touched."
     exit 1
 }
 $validatorScript = Join-Path $env:TEMP "dsh-deploy-yaml-validate.js"
@@ -348,6 +389,24 @@ Write-Host "`n== stage: backup =="
 $timestamp = Get-Date -Format 'yyyyMMddHHmmss'
 $backupRoot = "$U\.dsh\ConfigBackups\deploy-$timestamp"
 $backedUp = @()
+# GATE-2026-08-21 / QA5 (Major): backups and the launchers' per-run logs grew
+# strictly unbounded (25 backup dirs already, no prune anywhere). Keep the most
+# recent 15 backup sets; a deploy that has succeeded 15 times over does not need
+# the 16th-oldest snapshot. Newest are kept because rollback only ever restores
+# from the set this run just wrote.
+$existingBackups = @(Get-ChildItem "$U\.dsh\ConfigBackups" -Directory -Filter 'deploy-*' -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+if ($existingBackups.Count -gt 15) {
+    $existingBackups | Select-Object -Skip 15 | ForEach-Object {
+        Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "  pruned $($existingBackups.Count - 15) old backup set(s), kept newest 15"
+}
+# Same for the launchers' per-run logs (dsh-server-*, mission-control-*).
+$logDir = "$U\.dsh\logs"
+if (Test-Path $logDir) {
+    $oldLogs = @(Get-ChildItem $logDir -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -Skip 30)
+    if ($oldLogs.Count -gt 0) { $oldLogs | Remove-Item -Force -ErrorAction SilentlyContinue; Write-Host "  pruned $($oldLogs.Count) old server/console log(s), kept newest 30" }
+}
 foreach ($m in $map) {
     if ($m.skipIfExists -and (Test-Path $m.dst)) { continue }
     $existed = Test-Path $m.dst
@@ -375,8 +434,14 @@ foreach ($m in $map) {
         Write-Warning "missing repo file: $($m.src)"
     }
 }
-Set-Content -Path "$U\.dsh\machine" -Value $machine -Encoding ascii
-Write-Host "machine marker written: ~\.dsh\machine = $machine"
+# GATE-2026-08-21 / PE-2 (Critical): the machine marker is NOT written here.
+# It used to be written before post-validation, outside the backup/rollback
+# transaction. A failed non-halo deploy would then roll every config file back
+# to its pre-deploy content but leave the marker saying (e.g.) '5070ti' -- and
+# the marker is exactly what the NEXT unlabeled deploy trusts to pick a machine
+# profile. That renders one machine's files through another machine's
+# replacements: issue #35's shape, self-inflicted by rollback, and silent.
+# The write is deferred to AFTER post-validation succeeds (below).
 
 Write-Host "`n== stage: validate (live config composes clean) =="
 $live = Invoke-DumpConfigGate
@@ -405,6 +470,12 @@ if (-not $live.Clean) {
 }
 Write-Host "live config composes clean - no unmatched patch targets"
 
+# PE-2: only now, past post-validation, is it safe to advance the recorded
+# machine identity. A deploy that failed and rolled back never reaches here, so
+# it can never leave a marker ahead of the files on disk.
+Set-Content -Path "$U\.dsh\machine" -Value $machine -Encoding ascii
+Write-Host "machine marker written: ~\.dsh\machine = $machine"
+
 Write-Host "`nOK. staged -> validated -> backed up -> applied -> validated -> OK."
 Write-Host "Backups retained at: $backupRoot"
 
@@ -417,6 +488,49 @@ Write-Host "Backups retained at: $backupRoot"
 # self-heals what a deploy can own; AUDIT reports every row loudly. The
 # audit is a report, not a gate -- it only fails the deploy for a gap the
 # deploy itself just caused.
+
+Write-Host "`n== stage: lmstudio SDK (the loaders' only dependency) =="
+# Before 2026-08-21 the loader scripts imported a VENDORED copy of
+# @lmstudio/sdk that was never committed (git ls-files lmstudio/ -> 3 files,
+# no vendor/, and .gitignore excludes node_modules). It existed only on the
+# author's disk, so every clone failed here with MODULE_NOT_FOUND, the
+# launcher retried twice, and the cockpit opened with no brain. The loaders
+# now import the stock public package, pinned in lmstudio\package.json and
+# installed here. This stage is what makes a fresh clone able to load a model.
+$scriptsDir = "$U\.lmstudio\scripts"
+$sdkEntry   = "$scriptsDir\node_modules\@lmstudio\sdk\package.json"
+$wantSdk    = (Get-Content (Join-Path $repo "lmstudio\package.json") -Raw | ConvertFrom-Json).dependencies.'@lmstudio/sdk'
+$haveSdk    = if (Test-Path $sdkEntry) { (Get-Content $sdkEntry -Raw | ConvertFrom-Json).version } else { $null }
+if ($haveSdk -eq $wantSdk) {
+    Write-Host "  @lmstudio/sdk $haveSdk already installed"
+} else {
+    Write-Host "  installing @lmstudio/sdk $wantSdk (have: $(if ($haveSdk) { $haveSdk } else { 'none' }))..."
+    Push-Location $scriptsDir
+    & npm install --no-audit --no-fund 2>&1 | ForEach-Object { "    $_" }
+    $npmExit = $LASTEXITCODE
+    Pop-Location
+    $haveSdk = if (Test-Path $sdkEntry) { (Get-Content $sdkEntry -Raw | ConvertFrom-Json).version } else { $null }
+    if ($npmExit -ne 0 -or $haveSdk -ne $wantSdk) {
+        Write-Error "@lmstudio/sdk did not install (npm exit $npmExit, resolved '$haveSdk', wanted '$wantSdk'). The loaders cannot run without it - the brain will not load. Check that Node and npm are on PATH."
+        exit 1
+    }
+    Write-Host "  @lmstudio/sdk $haveSdk installed"
+}
+# Prove the loaders can actually resolve their import on THIS machine, rather
+# than assuming the install implies it.
+# The probe must live IN $scriptsDir: ESM resolves bare specifiers from the
+# importing FILE's directory, not the process working directory, so a probe in
+# %TEMP% fails even when the real loaders (which do live here) resolve fine.
+$resolveProbe = Join-Path $scriptsDir "dsh-sdk-resolve.probe.mjs"
+Set-Content -Path $resolveProbe -Encoding utf8 -Value 'import { LMStudioClient } from "@lmstudio/sdk"; console.log(typeof LMStudioClient === "function" ? "ok" : "bad");'
+$probe = & node $resolveProbe 2>&1
+$probeExit = $LASTEXITCODE
+Remove-Item $resolveProbe -Force -ErrorAction SilentlyContinue
+if ($probeExit -ne 0 -or "$probe".Trim() -ne 'ok') {
+    Write-Error "The loader scripts cannot import @lmstudio/sdk from $scriptsDir : $probe"
+    exit 1
+}
+Write-Host "  loaders can resolve @lmstudio/sdk"
 
 Write-Host "`n== stage: register (scheduled task: HALO Memory Snapshot) =="
 $snapTaskName = 'HALO Memory Snapshot'
@@ -472,8 +586,19 @@ Write-AuditRow 'LM Studio login-service mechanism (Run key or Startup shortcut)'
 # just succeeded this cannot be missing except by our own doing -- that one
 # IS deploy-caused and fails the deploy.
 $snapTask = Get-ScheduledTask -TaskName $snapTaskName -ErrorAction SilentlyContinue
-$snapOk = ($null -ne $snapTask -and $snapTask.State -in @('Ready', 'Running'))
-Write-AuditRow "scheduled task '$snapTaskName' registered and Ready" $snapOk $(if ($snapTask) { "state: $($snapTask.State)" } else { '' })
+# GATE-2026-08-21 / W2 (Major): the task is machine-global. Deploying from a
+# different home (a test, a second checkout) silently repoints THIS machine's
+# task at that other home's Snapshot-Memory.ps1 -- and this audit printed PASS
+# because the task merely existed and was Ready, never checking WHERE it points.
+# A task whose action path is not this deploy's own path is a real defect.
+$snapExpected = "$U\.dsh\memory\Snapshot-Memory.ps1"
+$snapActualArgs = if ($snapTask) { ($snapTask.Actions | ForEach-Object { $_.Arguments }) -join ' ' } else { '' }
+$snapPointsHere = $snapActualArgs -like "*$snapExpected*"
+$snapOk = ($null -ne $snapTask -and $snapTask.State -in @('Ready', 'Running') -and $snapPointsHere)
+$snapDetail = if (-not $snapTask) { '' }
+              elseif (-not $snapPointsHere) { "state: $($snapTask.State) but points ELSEWHERE -> $snapActualArgs" }
+              else { "state: $($snapTask.State), points here" }
+Write-AuditRow "scheduled task '$snapTaskName' registered, Ready, and pointing at THIS home" $snapOk $snapDetail
 if ($registerOk -and -not $snapOk) { $auditDeployCausedFailure = $true }
 
 # Row 4: desktop icons
@@ -481,11 +606,21 @@ foreach ($icon in 'DeepSeek Harness', 'Mission Control') {
     Write-AuditRow "desktop icon '$icon'" (Test-Path "$U\Desktop\$icon.lnk")
 }
 
-# Row 5: subagent plugins in both profiles
+# Row 5: subagent plugins in both profiles -- present AND at the pinned version.
+# PE-M3 (gate 2026-08-21): the row used to check presence only, so a core
+# upgrade (this migration: rc.7 -> 0.1.1-rc.2) left the profile plugins at the
+# OLD version and the audit still said PASS -- silent core/plugin version skew.
+# $dshPkg is "@deepseek-ai/dsh@<pin>"; extract the pin and compare.
+$pinnedVer = ($dshPkg -split '@')[-1]
 foreach ($profile in 'web', 'headless') {
-    $missingPkgs = @('dsh-subagent-codex', 'dsh-subagent-claude-code', 'dsh-subagent-acp') |
-        Where-Object { -not (Test-Path "$U\.dsh\profiles\$profile\node_modules\@deepseek-ai\$_") }
-    Write-AuditRow "subagent plugins in profile '$profile'" ($missingPkgs.Count -eq 0) $(if ($missingPkgs) { "missing: $($missingPkgs -join ', ')" } else { 'codex + claude-code + acp' })
+    $problems = @()
+    foreach ($pkg in 'dsh-subagent-codex', 'dsh-subagent-claude-code', 'dsh-subagent-acp') {
+        $pj = "$U\.dsh\profiles\$profile\node_modules\@deepseek-ai\$pkg\package.json"
+        if (-not (Test-Path $pj)) { $problems += "$pkg missing"; continue }
+        $v = (Get-Content $pj -Raw | ConvertFrom-Json).version
+        if ($v -ne $pinnedVer) { $problems += "$pkg is $v, want $pinnedVer" }
+    }
+    Write-AuditRow "subagent plugins in profile '$profile' at $pinnedVer" ($problems.Count -eq 0) $(if ($problems) { ($problems -join '; ') + " -- reinstall: pnpm dlx $dshPkg plugin --profile $profile add ..." } else { 'codex + claude-code + acp, version-matched' })
 }
 
 # Manual-by-preference (never auto-enabled, only reported): cockpit autostart
@@ -503,4 +638,4 @@ if ($auditDeployCausedFailure) {
 if ($renderRoot) { Remove-Item -Recurse -Force $renderRoot -ErrorAction SilentlyContinue }
 
 Write-Host "`nDone. If any row above says MISSING, fix it from the README's install checklist."
-Write-Host "Subagent plugins per profile: npx @deepseek-ai/dsh@0.1.0-rc.7 plugin --profile <web|headless> add @deepseek-ai/dsh-subagent-codex@0.1.0-rc.7 @deepseek-ai/dsh-subagent-claude-code@0.1.0-rc.7 @deepseek-ai/dsh-subagent-acp@0.1.0-rc.7 @deepseek-ai/dsh-sdk-protocol@0.1.0-rc.7"
+Write-Host "Subagent plugins per profile: pnpm dlx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile <web|headless> add @deepseek-ai/dsh-subagent-codex@0.1.1-rc.2 @deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2 @deepseek-ai/dsh-subagent-acp@0.1.1-rc.2 @deepseek-ai/dsh-sdk-protocol@0.1.1-rc.2"

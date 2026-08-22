@@ -1,4 +1,7 @@
-import { LMStudioClient } from "./vendor/node_modules/@lmstudio/sdk/dist/index.mjs";
+// 2026-08-21: was importing ./vendor/node_modules/@lmstudio/sdk, a directory
+// never committed to this repository -- every clone failed with
+// MODULE_NOT_FOUND. Stock public SDK, pinned and installed by Deploy-ToLive.
+import { LMStudioClient } from "@lmstudio/sdk";
 
 // MTP sweep loader: node Sweep-MTP.mjs <draftMaxTokens> <minContinueProbability>
 const draftMax = Number(process.argv[2]);

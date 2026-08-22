@@ -9,7 +9,7 @@ orchestration, model lifecycle, Windows fixes, benchmarking, privacy
 validation, and upgrade discipline on top of DeepSeek's runtime.
 
 The complete configuration:
-**DeepSeek Harness (`dsh` pinned `0.1.0-rc.7`) + LM Studio (Qwen3.8-27B Q5 brain,
+**DeepSeek Harness (`dsh` pinned `0.1.1-rc.2`) + LM Studio (Qwen3.8-27B Q5 brain,
 Qwen3 Coder 30B MoE on-demand worker) + Mission Control v3 (tabbed console) +
 OpenCode config**, as designed, benchmarked, and documented starting 2026-08-17,
 now with a live-reconciling Cordis config layer, a transactional live deploy,
@@ -60,14 +60,27 @@ auth files are deliberately excluded from sync.
   origin (resolved from `lms link status`, not name-guessing) and refuses
   destructive actions on remote models server-side; benches abort if a
   foreign model is generating. What it buys: clean-room cross-model audits on
-  owned silicon at $0, and fan-out to whichever box is fastest for the job.
+  owned silicon at $0. Parallel decode across both machines and
+  fastest-box routing are designed but **not yet measured** — do not plan
+  around them.
   Full section in the [USER-MANUAL](docs/USER-MANUAL.md).
 - **Full machine rebuild — the canonical checklist.** This list is the whole
   spec: every step, in order, nothing sourced from anywhere else. The deploy
   script's final **audit stage** checks the resulting machine state row by row
   and prints PASS/MISSING — the [USER-MANUAL's system-state table](docs/USER-MANUAL.md)
   is the human-readable reference for the same rows.
-  1. Install **Node 22+**, **pnpm 11**, and **LM Studio**.
+  1. Install **Node 22+**, **pnpm 11**, and **LM Studio**. **pnpm is
+     load-bearing, not optional:** the stack installs and runs the harness with
+     `pnpm dlx @deepseek-ai/dsh@<pin>`, because npm's dependency resolver hangs
+     indefinitely on this box's Node version for every dsh release past rc.7
+     (measured 2026-08-21: `npm install` never completes, `--dry-run` included;
+     pnpm resolves the same graph in ~50 s). Install it with `npm i -g pnpm` and
+     verify `pnpm --version` in a NEW shell. Then put LM Studio's CLI on PATH —
+     the launcher and both loaders shell out to `lms`, and without it the stack
+     fails 60 seconds later blaming the LM Studio API instead. Run LM Studio
+     once, then from its install directory: `.\\lms.exe bootstrap` (or use the
+     app's *Developer -> Install CLI* action). Verify with `lms --version` in a
+     NEW shell.
   2. In LM Studio, download the two models:
      `unsloth/Qwen3.8-27B-UD-Q5_K_XL` and
      `unsloth/Qwen3-Coder-30B-A3B-Instruct-Q4_K_S` (verify file hashes against
@@ -79,20 +92,46 @@ auth files are deliberately excluded from sync.
   4. Bootstrap the harness once **before** the first deploy (creates
      `~\.dsh\profiles`, which the deploy's YAML validator needs — the deploy
      also self-bootstraps if you forget, but this makes it explicit):
-     `npx @deepseek-ai/dsh@0.1.0-rc.7 web --dump-config`
-  5. Clone this repo and run `scripts\Deploy-ToLive.ps1`. It deploys all
+     `pnpm dlx @deepseek-ai/dsh@0.1.1-rc.2 web --dump-config`
+  5. **Check your hardware against the default profile first.** The
+     default machine profile is `halo`, which is tuned for an AMD Strix
+     Halo APU with 128 GiB of unified memory: a 21 GB Q5 brain at a
+     131,072-token context plus a ~16 GB MoE worker. Nothing probes your
+     machine — if you deploy `halo` onto smaller hardware the config is
+     applied without complaint and you discover the mismatch only when a
+     model fails to load. Budget roughly **40 GB of GPU-addressable
+     memory** for the stock profile. If you have less, copy
+     `machines/5070ti.yml` (16 GB discrete VRAM) as your starting point
+     and deploy with `MACHINE=<name>` — see
+     [machines/README.md](machines/README.md).
+  6. Clone this repo and run `scripts\Deploy-ToLive.ps1`. It deploys all
      files, registers the **HALO Memory Snapshot** hourly task itself, and
      ends with the state audit. **On a non-HALO machine**, set
      `MACHINE=<name>` for the first deploy (e.g. `$env:MACHINE='5070ti'`) —
      the deploy renders that machine's profile from `machines\<name>.yml`
      over the base files and the box remembers its name afterward
      (see [machines/README.md](machines/README.md)).
-  6. Install the per-profile subagent plugins (exact command printed at the
+  7. Install the per-profile subagent plugins (exact command printed at the
      end of every deploy).
-  7. Create desktop shortcuts **DeepSeek Harness** → `~\.dsh\Start-DSH.ps1`
-     and **Mission Control** → `~\.dsh\Start-MissionControl.ps1`.
-  8. Run `scripts\Deploy-ToLive.ps1` once more and confirm the audit prints
+  8. Create the two desktop shortcuts. **A shortcut pointing straight at
+     a `.ps1` will not run it** — Windows associates `.ps1` with *Edit*,
+     so double-clicking opens the script in a text editor. The shortcut
+     Target must invoke PowerShell explicitly:
+
+     - **DeepSeek Harness** ->
+       `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%USERPROFILE%\.dsh\Start-DSH.ps1"`
+     - **Mission Control** ->
+       `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%USERPROFILE%\.dsh\Start-MissionControl.ps1"`
+
+     The deploy's audit stage checks that both shortcuts exist, but it
+     cannot tell whether the Target is correct — verify by double-clicking
+     each one.
+  9. Run `scripts\Deploy-ToLive.ps1` once more and confirm the audit prints
      **all PASS**. Then double-click **DeepSeek Harness**.
+
+  If a step fails, read `~\.dsh\launcher.log` first — since 2026-08-21
+  both launchers capture the server's own output there and refuse to open
+  a browser at a dead port.
 
   Porting to non-HALO hardware? Read
   [docs/ports/tester-5070ti-bench-2026-08-18.md](docs/ports/tester-5070ti-bench-2026-08-18.md)
@@ -109,7 +148,13 @@ Zero third-party analytics. Live harness processes hold exactly one connection: 
 LM Studio. The `/delta-scan-halo` skill re-checks telemetry defaults on every future release
 before any re-pin.
 
-## Known rc.7 Windows issues (worked around in these configs)
+## Known Windows issues (worked around in these configs)
+
+> These were verified on `0.1.0-rc.7`; re-verification against the current
+> `0.1.1-rc.2` pin is pending (2026-08-21 migration) — some may already be
+> fixed upstream. The workarounds are harmless if a bug is gone, so they stay
+> documented until each is re-checked live.
+
 
 1. `@browsermcp/mcp` crashes harness boot when port 9009 is free → row disabled.
 2. Drive-root workspaces (`C:\`) never bind in the composer → use a normal directory.

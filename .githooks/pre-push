@@ -1,4 +1,19 @@
 #!/bin/sh
-# Publication gate: this repo is public, so every push publishes.
-# Install: git config core.hooksPath .githooks
-exec powershell -NoProfile -File "$(git rev-parse --show-toplevel)/scripts/Check-Publication.ps1"
+# Pre-push gate. Two checks must pass before anything reaches the public repo.
+# Install once: git config core.hooksPath .githooks
+#
+# TE2 (gate 2026-08-21): the test suite existed but nothing ran it, which is the
+# exact "verification claimed but not gated" failure this repo was built around.
+# Now the static suite runs on every push and blocks it on any failure.
+root="$(git rev-parse --show-toplevel)"
+
+# 1) publication policy (secrets / restricted paths)
+powershell -NoProfile -File "$root/scripts/Check-Publication.ps1" || exit 1
+
+# 2) the static test suite (no running stack required; exit code = failure count)
+powershell -NoProfile -ExecutionPolicy Bypass -File "$root/tests/Run-Tests.ps1" -Static || {
+    echo ""
+    echo "PUSH BLOCKED: tests/Run-Tests.ps1 -Static reported failures (see above)."
+    echo "Fix them, or run 'powershell -File tests/Run-Tests.ps1 -Static' to reproduce."
+    exit 1
+}

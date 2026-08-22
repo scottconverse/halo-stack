@@ -72,8 +72,8 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
 </header>
 
 <div class="hero">
-  <div class="kicker">100% local · one machine · every number measured<span class="pill">v0.5.0</span></div>
-  <h1>Frontier-class coding agents. No cloud required.</h1>
+  <div class="kicker">100% local · one machine · every number measured<span class="pill">v0.6.0</span></div>
+  <h1>Capable local coding agents. No cloud required for local-model work.</h1>
   <p class="sub">HALO is a fully local AI coding stack on a single AMD&nbsp;Strix&nbsp;Halo machine: a 27-billion-parameter brain, an on-demand MoE worker, a hardened agent cockpit with full-drive access, and a one-glance dashboard. Nothing on this page is a vendor claim — it was all benchmarked on the machine it runs on.</p>
   <div class="ctas">
     <a class="btn primary" href="https://quartz-entry-ptf2.here.now/">Read the full build log</a>
@@ -83,10 +83,10 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
 </div>
 
 <div class="stats">
-  <div class="stat"><b>4.3×</b><span>faster complete coding tasks on the MoE worker vs the dense brain — same task, same harness</span></div>
+  <div class="stat"><b>4.3×</b><span>faster on the measured complete coding task — MoE worker vs dense brain, same task, same harness</span></div>
   <div class="stat"><b>8.1×</b><span>time-to-first-token from prefix caching on the brain (108.6&nbsp;s → 13.4&nbsp;s at 19.6K tokens)</span></div>
   <div class="stat"><b>90.9 tok/s</b><span>worker decode; 615&nbsp;tok/s prefill — measured, not estimated</span></div>
-  <div class="stat"><b>131,072</b><span>token context (KV q8_0 makes the doubled window cost what 65K/f16 did), with proven continuity across forced compaction and an OS reboot</span></div>
+  <div class="stat"><b>131,072</b><span>token context (KV q8_0 makes the doubled window cost what 65K/f16 did). Compaction continuity was proven at 65,536; at 131,072 compaction is a retuned safety net, not a routine step</span></div>
   <div class="stat"><b>$0</b><span>marginal cost per token for all daily coding — the models live on the machine</span></div>
   <div class="stat"><b>2 machines</b><span>the same repo's deploy pipeline installed the full stack on an RTX&nbsp;5070&nbsp;Ti box — harness coding task 73&nbsp;s there vs 176&nbsp;s on HALO, three measurement passes replicated</span></div>
 </div>
@@ -99,13 +99,13 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
       <p>Dense 27B with vision, resident on LM Studio under a stable API identity. Handles cockpit sessions: coding, review, reasoning, full-drive filesystem and shell work.</p>
       <p class="fig">Its weakness — slow prefill — is neutralized by the harness's byte-stable request prefixes: after the first turn, LM Studio almost never re-reads the prompt.</p></div>
     <div class="card"><h3><em>The worker</em>Qwen3 Coder 30B · MoE</h3>
-      <p>Loads on demand with a 2-hour TTL, runs subagent and fan-out work at 4.3× the brain's task speed, then unloads and returns its ~16&nbsp;GB.</p>
+      <p>Loads on demand with a 2-hour TTL, runs delegated subagent work at 4.3× the brain's task speed, one job at a time (the brain serves a single prediction, so work queues rather than fans out), then unloads and returns its ~16&nbsp;GB.</p>
       <p class="fig">Kept on-demand deliberately: both models share one memory bus, so residency is earned by benchmark, not assumed.</p></div>
-    <div class="card"><h3><em>The cockpit</em>DeepSeek Harness · pinned rc.7</h3>
+    <div class="card"><h3><em>The cockpit</em>DeepSeek Harness · pinned 0.1.1-rc.2</h3>
       <p>Web UI on localhost. Append-only session logs, automatic compaction, background jobs, skills, workflows — and full <code>C:\</code> access set by a single environment variable.</p>
       <p class="fig">Every session can delegate to Codex, Claude Code, and OpenCode (over ACP) as subagents, search the live web and read pages as markdown (keyed Exa MCP, ~1,400 funded searches/month) plus Reddit via a dedicated RSS skill, and persist facts to a memory graph that survives reboots.</p></div>
     <div class="card"><h3><em>The glass</em>Mission Control</h3>
-      <p>A 5-tab operator console — overview, models, sessions, plugins, system — behind a master alarm strip: HARNESS · MODELS · MEMORY · DISK · STREAM.</p>
+      <p>A 6-tab operator console — overview, models, sessions, plugins, system, memory — behind a master alarm strip: HARNESS · MODELS · MEMORY · DISK · STREAM.</p>
       <p class="fig">Full model catalog with per-model load/unload and TTL countdowns, sessions with tokens/TTFT/decode rates, all 166 plugin rows with real mined descriptions and lifecycle state, memory pools in GiB with a GPU shared-pool leak alarm, and a live log tail. Reads native state every 5 seconds. Deletable without consequence.</p></div>
   </div>
 </section>
@@ -118,13 +118,13 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
       <defs><marker id="lar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#6f9fc8"/></marker></defs>
       <rect class="node primary" x="420" y="14" rx="13" width="240" height="58"/><text class="svg-t" x="540" y="39" text-anchor="middle">Operator</text><text class="svg-c" x="540" y="58" text-anchor="middle">two desktop icons, zero terminals</text>
       <path class="arrow" d="M480 72 L330 118"/><path class="arrow" d="M600 72 L750 118"/>
-      <rect class="node primary" x="150" y="118" rx="13" width="340" height="84"/><text class="svg-t" x="320" y="146" text-anchor="middle">DeepSeek Harness cockpit · :3080</text><text class="svg-c" x="320" y="166" text-anchor="middle">pinned 0.1.0-rc.7 · halo-standard preset</text><text class="svg-c" x="320" y="184" text-anchor="middle">full-drive access via one env var</text>
+      <rect class="node primary" x="150" y="118" rx="13" width="340" height="84"/><text class="svg-t" x="320" y="146" text-anchor="middle">DeepSeek Harness cockpit · :3080</text><text class="svg-c" x="320" y="166" text-anchor="middle">pinned 0.1.1-rc.2 · halo-standard preset</text><text class="svg-c" x="320" y="184" text-anchor="middle">full-drive access via one env var</text>
       <rect class="node alt" x="620" y="118" rx="13" width="300" height="84"/><text class="svg-t" x="770" y="146" text-anchor="middle">OpenCode</text><text class="svg-c" x="770" y="166" text-anchor="middle">independent sibling UI</text><text class="svg-c" x="770" y="184" text-anchor="middle">same local model + cloud routes</text>
       <path class="arrow" d="M320 202 L480 258"/><path class="arrow" d="M770 202 L610 258"/>
       <rect class="node good" x="395" y="258" rx="13" width="290" height="66"/><text class="svg-t" x="540" y="284" text-anchor="middle">LM Studio API · :1234</text><text class="svg-c" x="540" y="304" text-anchor="middle">one iGPU, one memory bus, queued turns</text>
       <path class="arrow" d="M480 324 L340 372"/><path class="arrow" d="M600 324 L740 372"/>
       <rect class="node good" x="165" y="372" rx="13" width="330" height="76"/><text class="svg-t" x="330" y="398" text-anchor="middle">Brain · Qwen3.8-27B Q5</text><text class="svg-c" x="330" y="418" text-anchor="middle">resident ~27 GB · 131,072 ctx · vision</text><text class="svg-c" x="330" y="436" text-anchor="middle">prefill cached across turns (8.1×)</text>
-      <rect class="node warn" x="585" y="372" rx="13" width="330" height="76"/><text class="svg-t" x="750" y="398" text-anchor="middle">Worker · Qwen3 Coder 30B MoE</text><text class="svg-c" x="750" y="418" text-anchor="middle">on demand, 2 h TTL, ~16 GB returned idle</text><text class="svg-c" x="750" y="436" text-anchor="middle">fan-out at 4.3× task speed</text>
+      <rect class="node warn" x="585" y="372" rx="13" width="330" height="76"/><text class="svg-t" x="750" y="398" text-anchor="middle">Worker · Qwen3 Coder 30B MoE</text><text class="svg-c" x="750" y="418" text-anchor="middle">on demand, 2 h TTL, ~16 GB returned idle</text><text class="svg-c" x="750" y="436" text-anchor="middle">4.3× task speed, one job at a time</text>
       <path class="arrow" d="M150 160 L60 160 L60 500 L150 500"/>
       <rect class="node" x="150" y="470" rx="12" width="360" height="60"/><text class="svg-t" x="330" y="494" text-anchor="middle">Reach</text><text class="svg-c" x="330" y="514" text-anchor="middle">Codex · Claude Code · OpenCode (ACP) · memory graph</text>
       <rect class="node" x="560" y="470" rx="12" width="360" height="60"/><text class="svg-t" x="740" y="494" text-anchor="middle">Mission Control · :3090</text><text class="svg-c" x="740" y="514" text-anchor="middle">reads native state every 5 s · owns nothing</text>
@@ -135,7 +135,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
 </section>
 
 <section id="console">
-  <h2>One screen that tells you the truth</h2>
+  <h2>One screen for what this machine is actually doing</h2>
   <p class="lede">Mission Control is a single zero-dependency file — no framework, no CDN, works offline — serving six tabs behind an alarm strip. It reads the harness's own APIs rather than duplicating them, and every number on it comes off this machine. These are real screenshots, not mockups.</p>
   <figure class="shot">
     <img src="images/mission-control-overview.png" alt="Mission Control Overview: alarm strip with six signals, machine state line, service and memory cards, and a full-width vitals timeline" loading="lazy">
@@ -198,6 +198,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
 
 <section id="honest">
   <h2>Honest status</h2>
+  <p class="lede" style="margin-top:20px"><b>What v1.x could not do, stated plainly.</b> Until 2026-08-21 the loader scripts imported an SDK that was never committed to this repository, so the stack could not load a model on any machine but the author's — five releases shipped in that state. Large jobs that did succeed succeeded because a frontier-model assistant decomposed them by hand; unattended, a whole-repo review ran 4 h 41 m and produced nothing. Mission Control displayed that dead run as healthy the entire time. Those three defects are fixed and the fixes are proven on hardware, but the autonomy work that removes the frontier-model operator from the loop is still in progress, not shipped.</p>
   <p class="lede">This is personal infrastructure, reproducible from a versioned repository, hardened by test — running on an upstream harness that is an actively-developed <b>developer preview</b>. Building on a preview means finding its edges. Six were found and worked around, all documented:</p>
   <ul class="buglist">
     <li><b>BrowserMCP boot crash</b> — the Windows port-cleanup hack kills harness startup when port 9009 is free; browser integration deferred until upstream ships a fix.</li>
@@ -211,7 +212,7 @@ footer{border-top:1px solid #16283d;padding:30px 0 44px;color:#7d93ab;font-size:
   <p class="lede">Because "runs locally" should be a verified claim, all 199 installed DeepSeek packages were swept — code <em>and</em> config — the telemetry subsystem read at source, and the live processes' sockets inspected. Findings: the Qwen models are inert weights executed by LM Studio (no Qwen code runs at all); the harness ships exactly one telemetry exporter, <strong>default DISABLED</strong>, and the disabled path constructs no telemetry SDK whatsoever — there is nothing in memory capable of sending. No third-party analytics of any kind. The running processes hold exactly one connection: localhost LM Studio. The stack's weekly self-audit skill re-checks telemetry defaults on every upstream release before any upgrade. Full evidence ships in the repository (<code>docs/AUDIT-telemetry-2026-08-17.md</code>).</p>
   <h2 style="margin-top:48px">Ported, and measured again</h2>
   <p class="lede">The stack is no longer single-machine by construction: its own <code>Deploy-ToLive</code> pipeline installed it end-to-end on a second, very different box (RTX&nbsp;5070&nbsp;Ti 16GB, CUDA engine) — launchers, plugins, Mission Control, all serving. The port forced real engineering: engine tuning proved per-engine in both directions (speculative decoding ON for HALO's Vulkan, OFF for CUDA; KV cache quantization worthless on Vulkan, a 2.4× unlock on 16&nbsp;GB CUDA), fleet-linked boxes need device-suffixed model identities so a deploy can't silently run on the wrong machine's compute, and the port surfaced — and fixed — two Mission Control defects, including an Unload button that could have killed a remote box's running model. The full record, including everything the small card <em>cannot</em> do, ships in <code>docs/ports/tester-5070ti-bench-2026-08-18.md</code>.</p>
-  <p class="lede" style="margin-top:26px">And the two boxes are not just siblings — they are a <b>fleet</b>. LM Studio's LM Link pools the models across both machines: a model resident on the CUDA box is callable from HALO and vice versa, with identities that resolve across the pool. The stack adopted this deliberately, with guard rails — every loaded model wears its true origin in Mission Control (resolved from the link protocol itself, not from naming conventions), destructive controls are refused server-side for anything running on the other machine, and benchmarks abort if a foreign model is generating. What the fleet buys in practice: clean-room audits where a model on one box reviews work it had no part in producing, and dispatching each job to whichever silicon is fastest for it — all local, all $0 per token.</p>
+  <p class="lede" style="margin-top:26px">And the two boxes are not just siblings — they are a <b>fleet</b>. LM Studio's LM Link pools the models across both machines: a model resident on the CUDA box is callable from HALO and vice versa, with identities that resolve across the pool. The stack adopted this deliberately, with guard rails — every loaded model wears its true origin in Mission Control (resolved from the link protocol itself, not from naming conventions), destructive controls are refused server-side for anything running on the other machine, and benchmarks abort if a foreign model is generating. What the fleet buys in practice: clean-room audits where a model on one box reviews work it had no part in producing, and all local, all $0 per token. Models on linked machines are addressable through LM Link; <b>parallel decode across both boxes and fastest-box routing are designed but not yet measured</b>, so nothing here should be planned around them yet.</p>
   <p class="lede" style="margin-top:26px">Deliberately not included, for now: the Hermes operations plane (cold-session cron and phone messaging — parked until the need justifies a second always-on gateway), self-hosted SearXNG search (evaluated; keyed Exa chosen for zero moving parts, with the sovereign path documented), and any custom plugins (nothing shipped has failed yet).</p>
 </section>
 

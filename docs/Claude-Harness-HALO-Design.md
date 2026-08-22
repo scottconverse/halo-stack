@@ -1,3 +1,10 @@
+> **MIGRATION NOTE (2026-08-21):** this is a point-in-time DESIGN RECORD from
+> the `0.1.0-rc.7` era; its `npx @deepseek-ai/dsh@0.1.0-rc.7` commands are
+> historical. The stack now runs `@deepseek-ai/dsh@0.1.1-rc.2` installed via
+> `pnpm dlx` (npm's resolver hangs on this Node version for dsh past rc.7). See
+> README, `docs/USER-MANUAL.md`, and `docs/phases/pin-record.txt` for current
+> operational facts. This document is kept as-written for provenance.
+
 # Local AI System Design — Claude Plan
 
 **DeepSeek Harness + LM Studio two-model routing + OpenCode on Windows 11 / AMD Strix Halo (HALO)**
