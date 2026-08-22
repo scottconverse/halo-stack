@@ -1,6 +1,6 @@
-# HALO 2.0 — Autonomy Redesign Specification (v2)
+# HALO 2.0 — Autonomy Redesign Specification (v2.1)
 
-**Status:** Audit-incorporated draft. Three external audits folded in; every capability claim re-verified against live 0.1.1-rc.2 source (§0.1). One more external pass is planned before build (the order in §0.2). Do not implement past the T0 fixes already shipped until that pass and the implementation plan exist.
+**Status:** Audit-incorporated draft, **four external audits folded in** (three over v1 in §0.1, one over v2 in §0.1b). Every capability claim re-verified against live 0.1.1-rc.2 source. The v2 pass landed six real defects, all corrected here. **What v2 itself added has still never been audited** (§0.1b, Q11) — that is the remaining gate before the build goes past WP1.
 **Version basis:** dsh **0.1.1-rc.2** — settled, live, and shipped (v0.6.0). The v1 "rc.7 vs rc.8 pin decision" is closed; see §0.1.
 **Date:** 2026-08-21
 **Author:** Claude, under operator direction
@@ -66,9 +66,10 @@ v2 went to an external reviewer (2026-08-21). Verdict: *approve after correction
 0. ~~Verify audit claims against source~~ — **done** (§3, §8, this session).
 1. ~~T0 config fixes~~ — **done + shipped in v0.6.0** (E1, E2, E7, compaction). Residual: `maxResultChars` (§4.8), runtime-attach proof for the preset/retry caps (§8 V-A).
 2. ~~Site truth pass~~ — **done** (v0.6.0 gate remediation removed the unsupported claims; the mutation suite now fails closed if any return).
-3. **SPEC v2** — this document.
-4. **Implementation plan** — next; fills the §8 matrix, sequences §11.
-5. **One external pass on v2, then build.**
+3. ~~SPEC v2~~ — **done**.
+4. ~~Implementation plan~~ — **done** (`IMPLEMENTATION-PLAN.md`; §8 matrix filled, WP1–WP9 sequenced).
+5. ~~One external pass on v2~~ — **done**; six defects landed and corrected → **this document is v2.1** (§0.1b).
+6. **Next: a pass over v2's own additions** (§0.1b "still unaudited", Q11–Q12), which the v2 reviewer could not cover. WP1 (the deterministic scripts) is unblocked meanwhile — no audit has ever disputed it.
 
 ---
 
