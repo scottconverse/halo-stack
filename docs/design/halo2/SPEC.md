@@ -215,7 +215,9 @@ Recomputes coverage from the manifest + findings on disk: units attempted/succee
 
 The protocol ships as a **dsh skill** (`large-job`), discovered by `skill-filesystem` (verified present) and loaded via the native `skill` tool. It contains: the selection rule, the SIZE/PLAN/COVERAGE invocations, the canonical MAP template, the record-and-continue + normalized breaker policies, the restricted-preset requirement, and the physics one-liners (window is a ceiling; one decode lane; compaction is an alarm). `AGENTS.md` shrinks to a pointer: *"for any job over one file's worth of reading, load the `large-job` skill first."* Scripts deploy via the existing Deploy-ToLive machinery.
 
-### 4.4 Federation and routing (config, not code)
+### 4.4 Federation and routing (config, not code) — DEFERRED milestone
+
+**Operator decision 2026-08-21: v2.0 ships single-machine.** This section activates with the federation milestone (after the 5070Ti is pulled, deployed, and live on LM Link). Until G6 passes there, engine concurrency stays 1 and no surface claims two-machine operation. The design below is kept so the planner and routing table are built federation-shaped from day one.
 
 - **Summarization off the brain:** `compaction-basic.summarizationProvider/-Model` → the 5070Ti identity resolved over LM Link. The safety-net compactor stops competing with the brain's decode lane. One settings block.
 - **Map-phase parallelism across machines:** workflow engine concurrency = machines with a usable idle model. The routing table maps lanes to identities: sweeps may run on 5070Ti/worker identities; synthesis stays on the brain. `agent(…,{model})` carries it per child.
@@ -291,7 +293,7 @@ A commented `halo:` block in `settings.yaml` (deployed, machine-profiled, MC-edi
 - **G3 — Stall proof.** A deliberately frozen session shows STALLED in MC within N+1 minutes; alarm trips; per-session STOP ends it without killing the server.
 - **G4 — Reasoning control proof.** The chosen mechanism measurably cuts reasoning share on a sweep unit (target: <30% of output tokens, from 91%).
 - **G5 — Config safety proof.** MC Settings refuses: retain ≥ threshold; window mismatch with loader; any value breaking any `machines/*.yml` render.
-- **G6 — Federation proof.** Summarization measured on the 5070Ti; two-machine map measured decoding simultaneously (or the claim is removed from docs).
+- **G6 — Federation proof (DEFERRED — operator decision 2026-08-21: v2.0 ships single-machine; federation is its own later milestone).** When that milestone runs: summarization measured on the 5070Ti; two-machine map measured decoding simultaneously. Until it passes, no doc or surface may claim two-machine operation. **G6 is not in the v2.0 gate set.**
 - **G7 — Operator autonomy proof.** The operator changes window + compaction budgets entirely from MC — no assistant — and the stack keeps working. This is the gate for the failure that motivated the redesign.
 - **G8 — Capability verification matrix complete** (§8) before build.
 - **G9 — Containment proof (E5).** An LJP child attempting an external subagent provider is blocked by the preset; a planted out-of-policy call in a child log turns COVERAGE red.
@@ -355,9 +357,10 @@ HALO 2.0 ships as a **layer another single operator can install on top of stock 
 **What the layer is:** the deploy machinery installs, over a stock dsh, the §10 surface — scripts, the `large-job` skill, the restricted preset, the Mission Control app, and the `halo:` config block — pinned to a known dsh version (currently 0.1.1-rc.2, installed via `pnpm dlx` because npm's resolver hangs past rc.7 on Node 25). Nothing here forks dsh; it is additive config, skills, a preset, and an external app.
 
 **Sequenced, not all-at-once.** The layer ships in order of proven need:
-1. **v2.0 core** — LJP (scripts + skill + restricted preset), MC truth + STOP + panels, MC Settings, the config layer. Gated by G1–G9.
+1. **v2.0 core (single-machine — operator decision 2026-08-21)** — LJP (scripts + skill + restricted preset), MC truth + STOP + panels, MC Settings, the config layer. Gated by **G1–G5, G7–G9** (G6 is out of this set).
 2. **v2.1 first plugin** — `halo-context-pressure` (~40 lines): injects the token-meter's pressure reading into the system prompt via the present `system-prompt` seam (gap #8). Ships only after V6 confirms the injection path and G1 shows budget-by-construction alone leaves the brain blind. This is the first piece that is genuinely a *plugin*, and the proof the layer model works for others.
-3. **Later** — read-accumulation guard (hard SIZE enforcement) if G1 shows the soft path leaks; budgeted-emit pipeline folded into the skill family.
+3. **Federation milestone** — bring the 5070Ti up (pull + deploy at the pinned dsh), run V5, pass G6, then flip engine concurrency and the routing table live (§4.4).
+4. **Later** — read-accumulation guard (hard SIZE enforcement) if G1 shows the soft path leaks; budgeted-emit pipeline folded into the skill family.
 
 **What "layer" does not mean:** not multi-tenant, not hosted, not cross-OS. A second operator installs the same single-operator Windows stack on their own machine. Multi-operator/cloud/non-Windows stay non-goals (§6).
 

@@ -17,7 +17,7 @@ Resolved this session by reading **package source** (`npm pack @deepseek-ai/…@
 | V2 | pin decision | ✅ Resolved | 0.1.1-rc.2 = npm `latest`+`next`; live |
 | V3 | Ralph/timeout/subagent-control present | ✅ Resolved | all present in dump |
 | **V4** | workflow concurrency key + default | ✅ Resolved | `dsh-tool-workflow/lib/index.js:848-880`: `maxConcurrentAgents` default 0 → `min(16,CPU-2)`; `maxTotalAgents` default **1000**; enforced in `worker.cjs:384,408` |
-| V5 | two-machine simultaneous decode | ⛔ **Blocked** | needs 5070Ti up on LM Link; box is the stale clone, not live. External dependency |
+| V5 | two-machine simultaneous decode | ⏸ **Deferred by decision** (operator 2026-08-21) | v2.0 ships single-machine; V5 moves to the federation milestone (5070Ti pull + deploy + LM Link) |
 | **V6** | context-pressure injectable | ✅ Resolved | `system-prompt` persona interpolates `{{model}}`/`{{cwd}}` — a template-variable seam exists |
 | **V7** | per-session cancel endpoint | ✅ Resolved | `POST /api/session.cancel` via the same RPC envelope MC uses for `session.list` |
 | V8 | continuable subagent under headless | ⏳ Open | needs one live headless run (slow, local brain). Sequenced in WP2 |
@@ -74,8 +74,8 @@ The caps and budgets from spec §1. Residual folded into WP6: set `maxResultChar
 ### WP6 — Config layer
 - **Files:** `dsh/settings.yaml` `halo:` block (budgets, shape profiles, breaker K, stall N, routing table, per-machine ratios, **`maxResultChars`**), summarization route.
 - **Seam:** `compaction-basic.summarizationProvider/-Model`; the routing table read by `halo-plan` and the MAP template.
-- **Gate:** **G6** — summarization measured on the 5070Ti + two-machine map decode. **Federation half is gated on V5** (5070Ti up); the single-machine half (maxResultChars, shape profiles, halo: block) ships now.
-- **Depends on:** WP1, WP5. **Federation sub-gate depends on the 5070Ti being live.**
+- **Gate:** the single-machine half (maxResultChars, shape profiles, `halo:` block, routing table shaped for federation but pinned to one machine) ships in v2.0. **The federation half (G6/V5) is DEFERRED to the federation milestone — operator decision 2026-08-21.** No surface claims two-machine operation until G6 passes there.
+- **Depends on:** WP1, WP5.
 
 ### WP7 — Deletions
 - Delete `pipeline/repo-review/`; shrink `AGENTS.md` orchestration prose to the skill pointer (spec §4.3).
@@ -100,18 +100,18 @@ The caps and budgets from spec §1. Residual folded into WP6: set `maxResultChar
 WP1 ─┬─> WP3 ─> WP2 ─┬─> WP4 ─> WP5 ─┐
      │                │             ├─> WP8 (G1 keystone) ─> WP9 (v2.1)
      └────────────> WP6 (single) ───┘
-                     WP6 (federation) … gated on 5070Ti (V5)
+                     WP6 (federation) … deferred → federation milestone (operator decision)
                      WP7 after WP2
 ```
 - **WP1 is the unblocker** — start it first; everything downstream needs the scripts.
 - **WP4+WP5 (Mission Control)** can proceed in parallel with WP2/WP3 once WP1's artifact contracts are fixed, since MC only *reads* the artifacts.
-- **The only external blocker is the 5070Ti** (V5/federation). It gates one sub-part of WP6 and the federation half of G6 — nothing else.
+- **No external blockers remain for v2.0.** The 5070Ti (V5/federation) is deferred by decision to its own milestone; the single-machine build runs start to finish on this box.
 
 ## 4. Risks & open decisions
 
 - **R1 — V-A runtime confirmation.** Static id/schema match is strong but the PE-M1 lesson says prove it live. Mitigation: the WP2 2-agent probe is a hard gate, not optional.
 - **R2 — Reasoning control (spec Q4).** No native `reasoningEfforts` mapping exists. WP2 must pick and *measure* a mechanism (G4) — not assume `enable_thinking` works end-to-end (it was never proven).
-- **R3 — 5070Ti availability.** Federation (V5/G6) can't be proven until that box is pulled, deployed, and on LM Link. Decision for the operator: bring it up now, or ship v2.0 single-machine and prove G6 later. The plan assumes the latter.
+- **R3 — 5070Ti availability. DECIDED (operator, 2026-08-21): ship v2.0 single-machine; federation is its own later milestone.** V5/G6 move there. Nothing in WP1–WP8 waits on that box.
 - **R4 — MC zero-dependency constraint vs comment-preserving YAML.** Spec Q5 (line-edit vs vendored CST library) is decided in WP5; default is line-level scalar replacement.
 
 ## 5. First action
