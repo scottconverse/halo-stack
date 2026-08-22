@@ -475,6 +475,108 @@ Test-Case 'G1' 'every deployed AGENTS.md declares its scope' {
     $true
 }
 
+# H-series: HALO 2.0 Large-Job Protocol scripts (WP1). Behavioral, hermetic --
+# each builds its own tree under TEMP and runs the real script, so a mutation to
+# the script logic turns the matching check red. These are the genuine gaps the
+# harness does not provide (spec docs/design/halo2/SPEC.md 4.2.1/.2/.8).
+$script:HaloDir = Join-Path $repo 'scripts\halo'
+function New-HaloFixture([string]$slug, [int]$fileCount, [int]$bytesEach) {
+    $root = Join-Path $env:TEMP ("halo-wp1test-" + $slug)
+    $src = Join-Path $root 'src'
+    New-Item -ItemType Directory -Force -Path $src | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $src 'node_modules') | Out-Null
+    for ($i = 0; $i -lt $fileCount; $i++) {
+        [System.IO.File]::WriteAllText((Join-Path $src ("f{0:D2}.txt" -f $i)), ('x' * $bytesEach))
+    }
+    # a file inside a skip dir: must never be counted
+    [System.IO.File]::WriteAllText((Join-Path $src 'node_modules\junk.txt'), ('z' * 500000))
+    return $root
+}
+
+Test-Case 'H1' 'halo-size is deterministic, skips vendored dirs, and honors the verdict thresholds' {
+    $sizeScript = Join-Path $script:HaloDir 'Halo-Size.ps1'
+    if (-not (Test-Path $sizeScript)) { return 'Halo-Size.ps1 is missing' }
+    $root = New-HaloFixture 'h1' 2 3500   # 2 files ~1000 tokens each; +skipped junk
+    $src = Join-Path $root 'src'
+    $a = & $sizeScript -Path $src -WindowTokens 10000 2>$null
+    $b = & $sizeScript -Path $src -WindowTokens 10000 2>$null
+    if (($a -join '') -ne ($b -join '')) { return 'halo-size output is not deterministic across identical runs' }
+    $ja = $a | ConvertFrom-Json
+    if ($ja.fileCount -ne 2) { return "skip list failed: expected 2 files (junk under node_modules excluded), got $($ja.fileCount)" }
+    if ($ja.verdict -ne 'single-pass') { return "expected single-pass (~2000 tok <= 6000 fit), got '$($ja.verdict)'" }
+    $dec = (& $sizeScript -Path $src -WindowTokens 3000 -UnitBudgetTokens 2000 2>$null) | ConvertFrom-Json
+    if ($dec.verdict -ne 'decompose') { return "expected decompose on a window that no longer fits, got '$($dec.verdict)'" }
+    $ref = (& $sizeScript -Path $src -WindowTokens 100 -UnitBudgetTokens 100 -MaxUnits 2 2>$null) | ConvertFrom-Json
+    if ($ref.verdict -ne 'refuse') { return "expected refuse when the unit count exceeds MaxUnits, got '$($ref.verdict)'" }
+    $true
+}
+
+Test-Case 'H2' 'halo-plan is deterministic, groups as a pure function, and emits file references not bodies' {
+    $sizeScript = Join-Path $script:HaloDir 'Halo-Size.ps1'
+    $planScript = Join-Path $script:HaloDir 'Halo-Plan.ps1'
+    if (-not (Test-Path $planScript)) { return 'Halo-Plan.ps1 is missing' }
+    $root = New-HaloFixture 'h2' 12 3000   # 12 files; tiny budget -> 12 units -> hierarchical groups
+    $src = Join-Path $root 'src'
+    & $sizeScript -Path $src -WindowTokens 8000 -UnitBudgetTokens 2000 -OutFile (Join-Path $root 'sizing.json') *>$null | Out-Null
+    $m1 = & $planScript -SizingFile (Join-Path $root 'sizing.json') -RunsRoot (Join-Path $root 'runsA') -UnitBudgetTokens 2000 2>$null
+    $m2 = & $planScript -SizingFile (Join-Path $root 'sizing.json') -RunsRoot (Join-Path $root 'runsB') -UnitBudgetTokens 2000 2>$null
+    if (($m1 -join '') -ne ($m2 -join '')) { return 'halo-plan manifest is not deterministic across identical runs' }
+    $man = $m1 | ConvertFrom-Json
+    if ($man.unitCount -ne 12) { return "expected 12 units at a 2000 budget, got $($man.unitCount)" }
+    if ($man.groupCount -ne 4) { return "grouping is not the pure ceil(sqrt(12))=4; got groupCount $($man.groupCount) -- the single-element-array unwrap bug is back" }
+    $flat = @(); foreach ($g in $man.groups) { $flat += $g }
+    if ((($flat | Sort-Object) -join ',') -ne (0..11 -join ',')) { return "groups do not cover units 0..11 exactly (gaps or overlaps): $($flat -join ',')" }
+    $u0 = Get-Content (Join-Path $root "runsA\$($man.runId)\units\unit-000.json") -Raw | ConvertFrom-Json
+    $names = ($u0.files[0].PSObject.Properties.Name)
+    if ($names -notcontains 'path' -or $names -notcontains 'byteCap') { return "unit files must carry references (path+byteCap), got: $($names -join ',')" }
+    if ($names -contains 'body' -or $names -contains 'content') { return 'unit files must NOT embed file bodies' }
+    $true
+}
+
+Test-Case 'H3' 'halo-coverage fails closed when REPORT.md hides a gap, and passes when every gap is named' {
+    $sizeScript = Join-Path $script:HaloDir 'Halo-Size.ps1'
+    $planScript = Join-Path $script:HaloDir 'Halo-Plan.ps1'
+    $covScript = Join-Path $script:HaloDir 'Halo-Coverage.ps1'
+    if (-not (Test-Path $covScript)) { return 'Halo-Coverage.ps1 is missing' }
+    $root = New-HaloFixture 'h3' 3 3000
+    $src = Join-Path $root 'src'
+    & $sizeScript -Path $src -WindowTokens 8000 -UnitBudgetTokens 2000 -OutFile (Join-Path $root 'sizing.json') *>$null | Out-Null
+    $man = (& $planScript -SizingFile (Join-Path $root 'sizing.json') -RunsRoot (Join-Path $root 'runs') -UnitBudgetTokens 2000 2>$null) | ConvertFrom-Json
+    $rd = Join-Path $root "runs\$($man.runId)"
+    New-Item -ItemType Directory -Force -Path (Join-Path $rd 'findings') | Out-Null
+    # attempt only unit-000 and unit-001; unit-002 is a real, unnamed gap
+    [System.IO.File]::WriteAllText((Join-Path $rd 'findings\unit-000.json'), '{"status":"ok"}')
+    [System.IO.File]::WriteAllText((Join-Path $rd 'findings\unit-001.json'), '{"status":"ok"}')
+    [System.IO.File]::WriteAllText((Join-Path $rd 'REPORT.md'), 'All good. Nothing to report.')
+    & $covScript -RunDir $rd 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 4) { return "expected exit 4 when a gap is hidden, got $LASTEXITCODE -- coverage does NOT fail closed" }
+    [System.IO.File]::WriteAllText((Join-Path $rd 'REPORT.md'), 'Coverage: unit-002 was not attempted (skipped).')
+    & $covScript -RunDir $rd 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { return "expected exit 0 once the gap is named in REPORT.md, got $LASTEXITCODE" }
+    $true
+}
+
+Test-Case 'H4' 'halo-coverage flags an E5 containment breach when a child log calls an external provider' {
+    $sizeScript = Join-Path $script:HaloDir 'Halo-Size.ps1'
+    $planScript = Join-Path $script:HaloDir 'Halo-Plan.ps1'
+    $covScript = Join-Path $script:HaloDir 'Halo-Coverage.ps1'
+    if (-not (Test-Path $covScript)) { return 'Halo-Coverage.ps1 is missing' }
+    $root = New-HaloFixture 'h4' 2 3000
+    $src = Join-Path $root 'src'
+    & $sizeScript -Path $src -WindowTokens 8000 -UnitBudgetTokens 2000 -OutFile (Join-Path $root 'sizing.json') *>$null | Out-Null
+    $man = (& $planScript -SizingFile (Join-Path $root 'sizing.json') -RunsRoot (Join-Path $root 'runs') -UnitBudgetTokens 2000 2>$null) | ConvertFrom-Json
+    $rd = Join-Path $root "runs\$($man.runId)"
+    New-Item -ItemType Directory -Force -Path (Join-Path $rd 'findings') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $rd 'logs') | Out-Null
+    foreach ($u in @($man.units)) { [System.IO.File]::WriteAllText((Join-Path $rd "findings\$($u.unit).json"), '{"status":"ok"}') }
+    [System.IO.File]::WriteAllText((Join-Path $rd 'REPORT.md'), 'All units covered.')
+    # a child reached a frontier provider -- P9 breach
+    [System.IO.File]::WriteAllText((Join-Path $rd 'logs\unit-000.jsonl'), '{"tool":"subagent_claude_code","input":{"prompt":"do it"}}')
+    & $covScript -RunDir $rd 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 5) { return "expected exit 5 on a containment breach, got $LASTEXITCODE -- the P9 tripwire is off" }
+    $true
+}
+
 # ------------------------------------------------------------------ live ----
 if (-not $Static) {
     Write-Host "`n-- live: this machine --"
