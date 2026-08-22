@@ -1,8 +1,9 @@
 # HALO 2.0 — Implementation Plan
 
-**Companion to:** `SPEC.md` (v2). This is the *how/when/order*; the spec is the *what/why*.
+**Companion to:** `SPEC.md` (v2.1). This is the *how/when/order*; the spec is the *what/why*.
 **Version basis:** dsh 0.1.1-rc.2 (live, shipped v0.6.0).
-**Date:** 2026-08-21
+**Date:** 2026-08-21 (v2.1 audit folded 2026-08-22).
+**External audit status (spec §0.1c):** the v2.1 external pass returned **Strong; WP1 approved to build**, with three residual risks tracked. The one hard condition it set: **a focused containment review + bypass-probe (Q12) gates WP3/WP4** — see WP3 below.
 **Gating rule (spec §7 G8):** the verification matrix must be complete before build. This plan reports it complete-enough to start: 9 of 11 probes resolved from package source this session; the 2 open ones are sequenced as gated steps inside the build, and neither blocks the single-machine core.
 
 ---
@@ -36,14 +37,14 @@ Resolved this session by reading **package source** (`npm pack @deepseek-ai/…@
 Ordered by dependency. Each WP names its files, the native seam it uses, its acceptance gate, and what it depends on. "Done" = its gate's proof script is green on the live stack.
 
 ### WP0 — T0 config *(DONE, shipped v0.6.0)*
-The caps and budgets from spec §1. Residual folded into WP6: set `maxResultChars`; add the runtime-attach 2-agent check (V-A) to WP2.
+The caps and budgets from spec §1. `maxResultChars: 2000` on the `tool-workflow` preset row is now **also set** (v2.1 audit residual-T0 close). Only residual left: the runtime-attach 2-agent check (V-A), folded into WP2.
 
 ### WP1 — The deterministic core: `halo-size` + `halo-plan` + `halo-coverage`
 - **Files:** `scripts/halo/Halo-Size.ps1` (or `.mjs`), `Halo-Plan.*`, `Halo-Coverage.*`; unit fixtures under `tests/halo/`.
 - **Seam:** none — this is the genuine-gap code (spec §4.2.1/.2/.8). Pure functions, no model calls.
 - **Contract:** `sizing.json`, `runs/<id>/manifest.json`, `units/unit-NNN.json`, coverage recompute + the E5 log-check.
-- **Gate:** unit tests (same input → same units; nothing silently dropped; overhead-aware estimate); wired into `tests/Run-Tests.ps1` and a fail-closed mutation in `Prove-TestsFailClosed.ps1`.
-- **Depends on:** nothing. **Start here.**
+- **Gate:** unit tests (same input → same units; nothing silently dropped; overhead-aware estimate; **the hierarchical-reduce grouping rule is pure and tested in isolation — same findings → same grouping**, spec §4.2.5, v2.1 audit); wired into `tests/Run-Tests.ps1` and a fail-closed mutation in `Prove-TestsFailClosed.ps1`.
+- **Depends on:** nothing. **Start here — externally approved to build (spec §0.1c), no audit dispute.**
 
 ### WP2 — The `large-job` skill + canonical MAP template
 - **Files:** `skills/large-job/SKILL.md`, `skills/large-job/map.workflow.js` (the canonical template), the selection rule + physics.
@@ -56,7 +57,9 @@ The caps and budgets from spec §1. Residual folded into WP6: set `maxResultChar
 ### WP3 — The restricted LJP child preset (E5)
 - **Files:** `dsh/agent-presets/halo-ljp-child/agent.cordis.yml` — the halo-standard preset minus `subagent-codex`, `subagent-claude-code`, `subagent-opencode-acp`.
 - **Seam:** agent-preset composition; children spawn under this preset.
-- **Gate:** **G9** — a child attempting an external provider is blocked by the preset; a planted out-of-policy call in a child log turns `halo-coverage` red.
+- **PRE-GATE — containment bypass probe (v2.1 audit, the one hard condition; blocks WP3 landing):** an adversarial probe that a spawned child under the restricted preset **cannot** reach a frontier provider by any of: (a) a tool the preset still grants that can re-add a provider; (b) a nested `workflow` call whose children inherit an unrestricted composition; (c) `subagent`/agent-config self-modification at runtime; (d) a provider reachable under a name the log-check does not match. Each path is either proven closed by the preset or proven caught by `halo-coverage`'s log-check. Until this passes, the preset is documented as *unproven* and G9 is not creditable. This is the review the auditor "would not let slide past WP3/WP4."
+- **Every child, no exceptions (spec §4.2.7):** verify the restricted preset is named for the map sweep, the REDUCE child, every hierarchical group-summary child, and any future escalation path — not just the sweep.
+- **Gate:** **G9** — a child attempting an external provider is blocked by the preset; a planted out-of-policy call in a child log turns `halo-coverage` red; the bypass probe above is green.
 - **Depends on:** WP1 (coverage log-check).
 
 ### WP4 — Mission Control: truth

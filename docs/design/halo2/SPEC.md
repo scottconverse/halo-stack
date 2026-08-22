@@ -61,10 +61,23 @@ v2 went to an external reviewer (2026-08-21). Verdict: *approve after correction
 
 **Still unaudited by anyone** (carried into §9 for the next pass): everything v2 added — the layer/distribution model (§11), the restricted-preset design (§4.2.7; the reviewer proposed the idea but never reviewed the implementation), hierarchical-reduce-by-default, the single-machine scope decision, and the WP1–WP9 sequencing. Plus **V-A**, which no reviewer has raised because PE-M1 post-dates them.
 
+## 0.1c The v2.1 audit — disposition
+
+v2.1 (this document, after the §0.1b corrections) went for the pass §0.1b asked for — over the additions the v2 reviewer could not see. **Verdict: Strong; approve for WP1, with three residual risks kept visible.** No new architectural defects: *"the remaining work is implementation discipline and the containment proof, not further redesign."*
+
+**Approved: WP1** (the three deterministic scripts) — no audit dispute touches them. Cleared to build.
+
+**Three residual risks — tracked, dispositioned:**
+1. **Restricted-preset containment is unaudited (highest technical risk).** Sound on paper, but Q12 is open — can a child re-enable an omitted provider at runtime (remaining tools, nested workflow, subagent config, self-modification)? Does the log-check catch every bypass, or only obvious tool names? **P9 stays a claim, not a wall + tripwire, until a concrete probe answers this.** → A **focused containment review now gates WP3/WP4**, with a bypass-probe plan specified in the implementation plan.
+2. **Soft SIZE stays soft.** Acceptable *only* if G1 is a real kill criterion, not a target. → §4.2.1 now **defines, measurably, what "soft path insufficient" means** (read-token accumulation in the session log), so the guard-plugin trigger is not a matter of opinion.
+3. **`maxResultChars` should not stay residual.** → **Closed: set to 2,000** on the `tool-workflow` preset row (§4.8); confirmed against source (default was 50,000).
+
+**Smaller items folded in:** the restricted preset must cover **every** LJP child, reduce children included (§4.2.7); the hierarchical-reduce grouping rule is **unit-testable in isolation** — same findings → same grouping (§4.2.5, WP1); gap #9 — confirm the `pwsh` `timeoutMs` argument is honored at implementation; **V-A stays open** until the WP2 2-agent probe actually runs (the static id/schema match is not "closed").
+
 ## 0.2 The order (T0 done; the rest gated)
 
 0. ~~Verify audit claims against source~~ — **done** (§3, §8, this session).
-1. ~~T0 config fixes~~ — **done + shipped in v0.6.0** (E1, E2, E7, compaction). Residual: `maxResultChars` (§4.8), runtime-attach proof for the preset/retry caps (§8 V-A).
+1. ~~T0 config fixes~~ — **done + shipped in v0.6.0** (E1, E2, E7, compaction); `maxResultChars` **now set to 2,000** (v2.1 audit, §4.8). Residual: runtime-attach proof for the preset caps (§8 V-A, WP2 probe).
 2. ~~Site truth pass~~ — **done** (v0.6.0 gate remediation removed the unsupported claims; the mutation suite now fails closed if any return).
 3. ~~SPEC v2~~ — **done**.
 4. ~~Implementation plan~~ — **done** (`IMPLEMENTATION-PLAN.md`; §8 matrix filled, WP1–WP9 sequenced).
@@ -191,7 +204,7 @@ Input: target paths. Walks the tree (skip `.git`, `node_modules`, `dist`, `vendo
 
 Verdict rule: estimate ≤ 60% of window → `single-pass` allowed. Above → `decompose`. Above the decompose ceiling (units × budget × safety) → `refuse` with the numbers and what to change (MC Settings, §4.7).
 
-Enforcement is honest-soft in v2.0: the skill instructs the brain to run SIZE first for any tree-scale ask and obey the verdict. Hard enforcement (a read-accumulation guard plugin) is a sequenced layer piece (§11), built only if G1 shows the soft path insufficient. Auditors: challenge this (Q6).
+Enforcement is honest-soft in v2.0: the skill instructs the brain to run SIZE first for any tree-scale ask and obey the verdict. Hard enforcement (a read-accumulation guard plugin) is a sequenced layer piece (§11), built only if the soft path proves insufficient. **"Insufficient" has a measurable definition** (v2.1 audit): G1's unattended run is instrumented via read-token accumulation in the session log; the soft path **fails** if, on a tree-scale ask, the model reads past the fit threshold (60% of window) *before* invoking SIZE, or reads past the decompose ceiling after SIZE returned `decompose`/`refuse`. Either event is a G1 failure, not a warning — and it makes the guard plugin v2.0-blocking rather than deferred. Auditors: challenge this (Q6).
 
 #### 4.2.2 PLAN — `halo-plan` (deterministic)
 
@@ -220,7 +233,7 @@ One fresh child reads **only** `findings/` (never the sources), writes `runs/<id
 
 #### 4.2.5 Hierarchical reduce by default (audit-2)
 
-Reduce is **hierarchical by default**, not as an exception: findings are grouped (by unit range or theme) → group summaries → final. The planner decides the grouping deterministically from the findings' measured size, so the shape is never improvised. A tiny run collapses to a single level automatically. (Audit-2 Q3: always-hierarchical is safer than a threshold branch; adopted.)
+Reduce is **hierarchical by default**, not as an exception: findings are grouped (by unit range or theme) → group summaries → final. The planner decides the grouping deterministically from the findings' measured size, so the shape is never improvised. A tiny run collapses to a single level automatically. (Audit-2 Q3: always-hierarchical is safer than a threshold branch; adopted.) **The grouping rule is a pure function — same findings → same grouping — and is unit-tested in isolation in WP1** (v2.1 audit), so the reduce shape is verifiable without running a model.
 
 #### 4.2.6 RESUME — skip units with findings on disk (E4)
 
@@ -238,7 +251,9 @@ HALO's resume is therefore deterministic, disk-based, and needs no plugin: on a 
 P9 ("local models do the work") was unenforceable in v1: a spawned child has the full tool set, including the Codex/Claude/OpenCode subagent providers, and could silently escalate a "local" run to a frontier API. v2 closes this two ways:
 
 - **Restricted preset:** LJP children run under an agent preset that omits the external subagent providers (`subagent-codex`, `subagent-claude-code`, `subagent-opencode-acp`) from the child's composition. The child physically cannot call them.
+- **Every child, no exceptions** (v2.1 audit): the restricted preset is applied to **all** spawned children — the map sweep, the REDUCE child(ren), any hierarchical group-summary child, and any future escalation path (e.g. a Ralph retry) if one is ever added to the protocol. A single child on the interactive preset would reopen the door; the skill and template name the restricted preset for every `agent()` spawn, and G9 fails if any child log shows otherwise.
 - **Coverage log-check:** `halo-coverage` (§4.2.8) reads each child's session log and fails the run (non-zero) if any child invoked a non-local provider. Defense in depth — the preset is the wall, the check is the tripwire.
+- **Open until probed (Q12):** whether a child can *re-enable* an omitted provider at runtime — via a tool the preset still grants, a nested workflow, `subagent` config, or a self-modification seam — is unproven. The implementation plan carries a concrete bypass-probe as a **WP3 pre-gate**; until it passes, P9 is a claim, not a wall.
 
 #### 4.2.8 COVERAGE — `halo-coverage` (deterministic, "mechanical coverage")
 
@@ -287,7 +302,7 @@ The operator will not hand-edit `settings.yaml`, and a design that assumes he wi
 
 ### 4.8 Settings additions (one home for HALO knobs)
 
-A commented `halo:` block in `settings.yaml` (deployed, machine-profiled, MC-edited) holds: LJP budgets and shape profiles (`wide-sweep`: low reasoning, 24K/3K; `deep-dive`: medium, 48K/6K; `synthesis`: medium, 32K/8K), breaker K, stall threshold N, the routing table, per-machine scaling ratios, and **`maxResultChars`** (residual T0 item: not currently set, so tool results return at the **stock default of 50,000 — about 14K tokens of tool result landing in the parent**. §4.2's "<25K parent context" budget *assumes* this is lowered; target ~2,000. It stays an operator-visible knob because the truncation tradeoff is a tuning call, not a silent slam).
+A commented `halo:` block in `settings.yaml` (deployed, machine-profiled, MC-edited) holds: LJP budgets and shape profiles (`wide-sweep`: low reasoning, 24K/3K; `deep-dive`: medium, 48K/6K; `synthesis`: medium, 32K/8K), breaker K, stall threshold N, the routing table, and per-machine scaling ratios. **`maxResultChars` is now set to 2,000** on the `tool-workflow` preset row (v2.1 audit — it should not have stayed residual, since the "<25K parent" invariant in §4.2 is load-bearing for P3/G1). Confirmed against source: `dsh-tool-workflow`'s Config default is 50,000 (~14K tokens into the parent). It stays an operator-visible knob (MC Settings surfaces it) because the truncation tradeoff is a tuning call — but its default is now safe, not the stock 50,000.
 
 **Reasoning control (open, verified genuinely unset):** no `reasoningEfforts` mapping appears in the composed config, so per-child reasoning is not a solved native knob. F5 (91% thinking) makes this load-bearing. Candidates, **ranked by the v2 audit** — test in this order:
 
