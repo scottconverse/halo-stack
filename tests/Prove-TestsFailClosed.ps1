@@ -133,6 +133,27 @@ if ($false) { exit 1 }' }
        file = 'scripts\Deploy-ToLive.ps1'
        from = '$snapOk = ($null -ne $snapTask -and $snapTask.State -in @(''Ready'', ''Running'') -and $snapPointsHere)'
        to   = '$snapOk = ($null -ne $snapTask -and $snapTask.State -in @(''Ready'', ''Running''))' }
+
+    # WP1 (HALO 2.0 scripts). Each breaks one script; the matching H-check reddens.
+    @{ id = 'H1'; defect = 'halo-size drops node_modules from the skip list -> vendored trees get sized'
+       file = 'scripts\halo\Halo-Size.ps1'
+       from = "'.git', 'node_modules', 'dist', 'build', 'out', 'vendor', 'bin', 'obj',"
+       to   = "'.git', 'dist', 'build', 'out', 'vendor', 'bin', 'obj'," }
+
+    @{ id = 'H2'; defect = 'halo-plan grouping loses the ceil(sqrt(n)) rule -> one group per unit'
+       file = 'scripts\halo\Halo-Plan.ps1'
+       from = '$groupCount = [int][math]::Ceiling([math]::Sqrt($UnitCount))'
+       to   = '$groupCount = [int][math]::Ceiling($UnitCount)' }
+
+    @{ id = 'H3'; defect = 'halo-coverage stops failing on a hidden gap -> a report can hide missing units'
+       file = 'scripts\halo\Halo-Coverage.ps1'
+       from = 'if ($gapHidden) { exit 4 }'
+       to   = 'if ($false) { exit 4 }' }
+
+    @{ id = 'H4'; defect = 'halo-coverage stops flagging a containment breach -> E5 tripwire disarmed'
+       file = 'scripts\halo\Halo-Coverage.ps1'
+       from = 'if ($containmentBreached) { exit 5 }'
+       to   = 'if ($false) { exit 5 }' }
 )
 
 Write-Host "`n=== mutation check: does the suite actually fail closed? ===" -ForegroundColor Cyan
