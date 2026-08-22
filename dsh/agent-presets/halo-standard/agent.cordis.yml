@@ -254,8 +254,17 @@
         maxConcurrentAgents: 1
         maxTotalAgents: 64
 
+    # GATE-2026-08-22 / v2.1 audit residual-T0: the workflow tool's rendered
+    # result to the PARENT defaults to maxResultChars 50000 (~14K tokens; source:
+    # dsh-tool-workflow/lib/types/index.js:18). The LJP parent-context invariant
+    # (<25K, P3/G1) depends on this being small -- children write findings to
+    # disk and the script returns a <=1K summary, so 2000 chars is ample and
+    # caps a pathological return. Key + id match the tool's Config schema, so it
+    # attaches (runtime-confirmed alongside the other preset caps in WP2 / V-A).
     - id: tool-workflow
       name: '@deepseek-ai/dsh-tool-workflow'
+      config:
+        maxResultChars: 2000
 
     - id: tool-ralph
       name: '@deepseek-ai/dsh-tool-ralph'
