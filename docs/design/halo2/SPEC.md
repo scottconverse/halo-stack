@@ -350,18 +350,18 @@ Most of v1's matrix is resolved this session against the composed 0.1.1-rc.2 con
 | ~~V1~~ | rc.7 vs rc.8 catalog delta | **Resolved** — basis is 0.1.1-rc.2; 143 composed entries enumerated |
 | ~~V2~~ | Pin decision rc.7 vs rc.8 | **Resolved** — 0.1.1-rc.2 (npm `latest`+`next`), live + shipped |
 | ~~V3~~ | Ralph, timeout-policy, subagent-control present? | **Resolved — all present** (verified in dump) |
-| V4 | Workflow engine concurrency config key + per-run `maxTotalAgents` behavior | **Probe** — 3-agent script on the live engine |
-| V5 | Two LM Link identities decode **simultaneously** (brain + 5070Ti)? | **Probe** — timed concurrent requests |
-| V6 | Is a context-pressure value injectable via the `system-prompt` plugin (present)? | **Probe** — the injection point exists; confirm runtime variable path (drives §11 plugin) |
+| V4 | Workflow engine concurrency config key + per-run `maxTotalAgents` behavior | **Resolved (source)** — `maxConcurrentAgents` default 0 → `min(16,CPU-2)`; `maxTotalAgents` default 1000; enforced in `worker.cjs`. Runtime-attach is V-A |
+| V5 | Two LM Link identities decode **simultaneously** (brain + 5070Ti)? | **Deferred** (operator decision) — moves to the federation milestone (§4.4); not a v2.0 gate |
+| V6 | Is a context-pressure value injectable via the `system-prompt` plugin (present)? | **Resolved (seam)** — persona interpolates `{{var}}`; the injection point exists. Runtime variable path confirmed in WP9 |
 | ~~V7~~ | Host-plane per-session cancel endpoint for MC STOP | **Resolved** — `POST /api/session.cancel {sessionId}`; `subagent.interrupt` for continuable children; one-shot children abort only via the parent's shared signal |
 | V8 | `subagent` continuable/background vs one-shot under headless — does the parent idle-wait cover continuable children? | **Probe** — headless run. Note the preset sets `backgroundMode: continuable`; probe with that value |
-| V9 | Spawn-child default model/reasoning inheritance from `agent-default-model` | **Probe** |
+| V9 | Spawn-child default model/reasoning inheritance from `agent-default-model` | **Resolved (mostly)** — children default to the local brain (`agent-default-model` lmstudio/qwen, `subagentProvider: spawn`); reasoning is not inherited (no native `reasoningEfforts`) |
 | ~~V10~~ | Skill auto-discovery path (`skill-filesystem`) | **Resolved** — `~/.dsh/skills/<name>/SKILL.md`, rank 400, **one level deep only** (nested `**/SKILL.md` is excluded, so `skills/large-job/SKILL.md` is correct and no deeper nesting will be found) |
-| **V-A** | Do `maxConcurrentAgents`/`maxTotalAgents`/`maxRetries` **attach at runtime** at 0.1.1 (preset + retry-policy compose separately from `web --dump-config`)? | **Probe** — the PE-M1 lesson: present-in-file ≠ attaches. Verify via a composed-preset dump or a live 2-agent probe |
+| **V-A** | Do `maxConcurrentAgents`/`maxTotalAgents`/`maxRetries` **attach at runtime** at 0.1.1 (preset + retry-policy compose separately from `web --dump-config`)? | **Resolved (static), runtime probe in WP2** — the preset `- id: workflow-worker-thread` + keys exactly match `WorkerThreadWorkflowEngine.Config`; value `1`≠`0` so the cap resolves. The 2-agent WP2 probe confirms live |
 
 ---
 
-## 9. Open questions for the external auditors (v2)
+## 9. Open questions for the external auditors (v2.1)
 
 1. **Lane boundaries:** Is the §4.1 token-triggered mapping correct, or are there jobs it misroutes?
 2. **Sequential-by-default map:** With one machine, LJP is strictly sequential. A safe way to overlap prefill/decode on one endpoint, or is sequential correct?
