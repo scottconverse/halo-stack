@@ -48,7 +48,8 @@ The caps and budgets from spec §1. Residual folded into WP6: set `maxResultChar
 ### WP2 — The `large-job` skill + canonical MAP template
 - **Files:** `skills/large-job/SKILL.md`, `skills/large-job/map.workflow.js` (the canonical template), the selection rule + physics.
 - **Seam:** `tool-workflow` + `workflow-worker-thread` (dsh API — `meta` is a tool param, **no** `export const meta`, E6); `skill-filesystem` for discovery.
-- **In this WP:** run the **V8** probe (a continuable child under headless) and the **V-A** runtime check (a 2-agent script must show the 2nd agent queue, proving `maxConcurrentAgents:1` holds live).
+- **In this WP:** run the **V8** probe (a continuable child under headless, `backgroundMode: continuable`) and the **V-A** runtime check (a 2-agent script must show the 2nd agent queue, proving `maxConcurrentAgents:1` holds live).
+- **v2-audit carries (spec §0.1b):** the template loops sequentially in plain JS without relying on config (E2b); it passes `timeoutMs` explicitly on every `pwsh` call (gap #9 — `timeout-policy` enforces nothing for pwsh/bash/workflow); it never sets `maxTotalAgents` (E1 — engine policy, preset only); every phase writes its artifact **before returning**, because cancellation discards the tool result (E4b).
 - **Gate:** a scoped LJP run over a small fixture tree completes with report + coverage; parent context stays < 25K; zero compactions.
 - **Depends on:** WP1, WP3.
 
@@ -110,7 +111,7 @@ WP1 ─┬─> WP3 ─> WP2 ─┬─> WP4 ─> WP5 ─┐
 ## 4. Risks & open decisions
 
 - **R1 — V-A runtime confirmation.** Static id/schema match is strong but the PE-M1 lesson says prove it live. Mitigation: the WP2 2-agent probe is a hard gate, not optional.
-- **R2 — Reasoning control (spec Q4).** No native `reasoningEfforts` mapping exists. WP2 must pick and *measure* a mechanism (G4) — not assume `enable_thinking` works end-to-end (it was never proven).
+- **R2 — Reasoning control (spec Q4).** No native `reasoningEfforts` mapping exists. WP2 must pick and *measure* a mechanism (G4) — not assume `enable_thinking` works end-to-end (it was never proven). **Test order is now decided (v2 audit): `GenerateOptions.reasoningEffort` via the agent/request waterfall first, because its resolved value is logged — it yields the G4 measurement for free.**
 - **R3 — 5070Ti availability. DECIDED (operator, 2026-08-21): ship v2.0 single-machine; federation is its own later milestone.** V5/G6 move there. Nothing in WP1–WP8 waits on that box.
 - **R4 — MC zero-dependency constraint vs comment-preserving YAML.** Spec Q5 (line-edit vs vendored CST library) is decided in WP5; default is line-level scalar replacement.
 

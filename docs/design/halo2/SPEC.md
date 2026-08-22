@@ -36,6 +36,31 @@ v1 went to three external reviewers (two returned independent audits; the third 
 
 **Migration reconciliation (this session):** the whole stack moved rc.7 → 0.1.1-rc.2 via `pnpm dlx` (npm's resolver hangs on this Node 25 box for anything past rc.7). That closed the v1 pin question (V2/Q8) and shipped the T0 fixes. It also means the capability map below is verified against the version we actually run, not the version the audit assumed.
 
+## 0.1b The v2 external audit — disposition
+
+v2 went to an external reviewer (2026-08-21). Verdict: *approve after corrections*. Grading each finding against the actual v2 text, because a stale claim in an audit is as expensive as a stale claim in a spec:
+
+**Landed — real defects in v2, corrected in this revision:**
+
+| Finding | What was wrong | Fix |
+|---|---|---|
+| **E1** | **v2 contradicted itself.** §0.1's E1 row said the cap "lives in the agent preset, not a script," while §4.2.3 still listed "`maxTotalAgents` set from the manifest." The tool sends only meta/script/args/parent/signal, so a script cannot set it | §4.2.3 bullet rewritten to state the script does *not* set it |
+| **E2b** | The template leaned on engine config for sequencing. Config is a ceiling; a correct script must not depend on one | §4.2.3: the script is sequential in plain JS on its own |
+| **timeout-policy** | v2's capability map marked it "✓ — use as-is." **Wrong.** Verified from package source: it enforces only a budget the tool *declares*, and `pwsh`/`bash`/`workflow` declare none — so HALO's scripts and the entire map phase had no deadline | New **gap #9**; the template passes `timeoutMs` per `pwsh` call (the tool takes it as an argument), plus in-script deadlines |
+| **E4b** | v2 never stated that the parent turn **blocks** for the whole run and that **cancellation discards partial output as an error** | §4.2.6 + §4.6: the disk is the run's memory; after STOP the findings stand and COVERAGE reports the partial state |
+| **Reasoning control** | v2 listed four candidates unranked. The audit named a better one that **logs its own resolved value** — the G4 measurement comes free | §4.8 candidates re-ranked; `reasoningEffort` via the request waterfall is tested first |
+| **`maxResultChars`** | v2 flagged it as residual but never said the "<25K parent" budget *depends* on lowering it from the 50,000 default (~14K tokens into the parent) | §4.8 states the dependency and the target |
+
+**Did not land — the review's "sources read" cite `halo-stack @ 80683bd (v0.5.0)` and harness rc.7/rc.8, i.e. pre-migration repo state, so several findings describe a stack that no longer exists.** Each was re-checked against disk before being set aside:
+- *"Your live preset sets only `provider: spawn`, F4 is still armed"* — false. `maxConcurrentAgents: 1` and `maxTotalAgents: 64` are in the preset and shipped in v0.6.0.
+- *E3, the rc.7→rc.8 delta* — already corrected in v2; the basis is 0.1.1-rc.2, newer than rc.8.
+- *"Adopt `agent-team` as the v2.1 durability path"* — **rejected on fact: `agent-team` does not exist in 0.1.1-rc.2** (verified absent in the composed config). It was an rc.8 package. Resume stays the disk-based mechanism the same audit proposed in E4.
+- *The seven site-copy corrections (§7 of the review)* — verified **already applied on disk**: "fan-out" is gone, the worker card reads "one job at a time," the compaction claim is qualified to 65,536, Honest status already admits the frontier-assistant decomposition, and the tab count is consistent.
+
+**Declined — a judgment call, not a defect:** the review recommends shrinking the Settings tab to a read-only view that emits a diff for the operator to apply elsewhere. That is F8 with extra steps: the operator still cannot change a value from the console, which is the failure this redesign exists to end. v2 already takes the middle path the review's own risk argument points at — the tab is interactive, but **Apply drives the existing Deploy/Sync machinery**, so no new text editor and no bespoke YAML writer lives in Mission Control. De-risking instead by sequencing: the live-math + refusal engine ships first (all of the value, none of the write risk), the write path behind it.
+
+**Still unaudited by anyone** (carried into §9 for the next pass): everything v2 added — the layer/distribution model (§11), the restricted-preset design (§4.2.7; the reviewer proposed the idea but never reviewed the implementation), hierarchical-reduce-by-default, the single-machine scope decision, and the WP1–WP9 sequencing. Plus **V-A**, which no reviewer has raised because PE-M1 post-dates them.
+
 ## 0.2 The order (T0 done; the rest gated)
 
 0. ~~Verify audit claims against source~~ — **done** (§3, §8, this session).
@@ -118,7 +143,7 @@ Presence column legend: **✓** = verified in the composed 0.1.1-rc.2 config thi
 | Cross-run resume | no native resume/durability plugin (`agent-team` absent) | ✗ | Deterministic skip-if-findings-exist (§4.2.6) — **genuine gap #4** |
 | Keep local work local | subagent providers include external Codex/Claude/OpenCode; no native restriction | ✗ | **Restricted LJP child preset** + coverage log-check (§4.2.7, E5) — **genuine gap #5** |
 | Loop / repeat guard | `repeat-tool-reminder` (3/5/8 thresholds) | ✓ | Config review only |
-| Per-tool timeouts | `timeout-policy` / `tool-call-timeout-policy` | ✓ | Nothing — use as-is |
+| Per-tool timeouts | `timeout-policy` is present but **enforces only a budget the tool itself declares** (`ToolDefinition.timeoutMs`). Verified from source: `pwsh`, `bash` and `workflow` declare none, so **HALO's scripts and the whole map phase have no tool-level deadline** | ✗ (in practice) | **The template passes `timeoutMs` explicitly on every `pwsh` call** — the pwsh tool accepts it as a per-call argument, so the deadline is set by the caller, not hoped for from the policy. Plus in-script deadlines (v2 audit) — **genuine gap #9** |
 | Identical-failure breaker | partial (`repeat-tool-reminder` covers identical *tool calls* only) | ✓ | Normalized-signature breaker inside the canonical template (plain JS); MC stall alarm backstop (§4.6) |
 | Oversized tool-output control | `spill-local` + `compaction-tool-result-pruner` | ✓ | Config review; keep. Plus set `maxResultChars` (§4.8) |
 | Background work visibility | `jobs-local` + `tool-jobs` + `tool-subagent-control` (list-agents/interrupt/send) | ✓ | MC rendering of the same data (§4.6) |
@@ -177,13 +202,13 @@ Unit contents are **file references, not file bodies** — children read their o
 
 The skill ships a canonical script the brain parameterizes (run id, unit count, finding schema). Written to **dsh's actual workflow API** — `meta` is a tool parameter, there is no `export const meta` (E6). The template (audited once, reused always) implements:
 
-- `pipeline(unitIds, …)` with **engine concurrency matched to available machines** (§4.4); single-machine day = 1, sequential by design (P5/F4)
+- `pipeline(unitIds, …)` with **engine concurrency matched to available machines** (§4.4); single-machine day = 1, sequential by design (P5/F4). **The script must be sequential on its own, in plain JavaScript — it never relies on the config to hold the line.** Config is a ceiling; a correct script does not depend on a ceiling being set (v2 audit E2b).
 - each `agent()` call: a standalone prompt (children inherit nothing) naming exactly one unit file, the brief, the output schema, and "read only the listed files"
 - `{schema}` on every call → validated structured findings; child writes `runs/<id>/findings/unit-NNN.json`, returns a ≤1K summary
 - **record-and-continue**: a `null` child is recorded as a failed unit; the run continues
 - **normalized-signature breaker** (audit-2): ≥3 consecutive failures, or ≥K total with identical error text *after normalizing ids/timestamps/paths* → stop, return partial flagged `halted`
 - `phase()` / `log()` narration → native workflow session events MC renders (§4.6)
-- `maxTotalAgents` set from the manifest (units + reduce + margin) — the native hard cap backs the soft plan
+- **the script does NOT set `maxTotalAgents`** — it cannot. The workflow tool sends only meta/script/args/parent/signal, so the run ceiling is engine policy and lives on the `workflow-worker-thread` preset row (`maxTotalAgents: 64`, shipped). *(v2 audit E1: an earlier draft of this bullet claimed the manifest set it, contradicting the E1 row in §0.1. Corrected.)*
 - children run under the **restricted LJP preset** (§4.2.7) — no external subagent providers
 
 The skill's prose explicitly tells the brain to **prefer this template** for tree-scale work, overriding the workflow tool's own use-discouraging preamble (E6).
@@ -198,7 +223,14 @@ Reduce is **hierarchical by default**, not as an exception: findings are grouped
 
 #### 4.2.6 RESUME — skip units with findings on disk (E4)
 
-The workflow engine has no native resume (`agent-team` absent). HALO's resume is deterministic and needs no plugin: on a re-run of the same `runs/<id>`, MAP skips any unit whose `findings/unit-NNN.json` already exists and is schema-valid. A killed or halted run resumes by re-invoking with the same id; only unattempted units run. `session-projection` (present) supplies MC's live progress across the resume.
+The workflow engine has no native resume (`agent-team` absent). Two engine limits make this load-bearing, both confirmed by the v2 audit and carried here explicitly:
+
+- **No journalling or resume.** Scripts, child progress, and intermediate values are not checkpointed; a process restart cannot continue a run.
+- **The parent turn BLOCKS until the whole workflow settles.** There is no background start/poll API, and **cancellation discards partial output as an error**. So a 2-hour LJP run is one blocking tool call whose return value cannot be trusted to survive a stop.
+
+HALO's resume is therefore deterministic, disk-based, and needs no plugin: on a re-run of the same `runs/<id>`, MAP skips any unit whose `findings/unit-NNN.json` already exists and is schema-valid. A killed or halted run resumes by re-invoking with the same id; only unattempted units run. `session-projection` (present) supplies MC's live progress across the resume.
+
+**The disk is the run's memory, not the tool result.** Because cancellation throws away the return value, every phase writes its artifact before it returns, and `halo-coverage` (§4.2.8) reads only what is on disk. This is what makes STOP safe (§4.6).
 
 #### 4.2.7 Child containment — the restricted LJP preset (E5)
 
@@ -236,7 +268,8 @@ MC stays an **external watchdog, never a cockpit plugin** (operator constraint):
 
 - **Derived liveness (gap #6):** a session shown RUNNING must have appended to its durable log within N minutes (default 5). Otherwise **STALLED — no progress for H:MM** + alarm strip. The upstream `running` flag is displayed but never trusted (P6).
   - *Implementation note:* session files are concatenated zstd frames; Node `zlib` returns only the first frame. MC's reader walks frames (mtime+size for liveness; frame-walk for content).
-- **Per-session STOP:** a stop control per running session via the host-plane cancel endpoint (exact endpoint is V7). The 2026-08-20 run could only be stopped by killing the whole server; that is not an operator control.
+- **Per-session STOP:** a stop control per running session via `POST /api/session.cancel {sessionId}` (V7, resolved). Continuable children also expose `subagent.interrupt`; one-shot children are not individually cancellable — cancelling the parent turn aborts them through the shared signal. The 2026-08-20 run could only be stopped by killing the whole server; that is not an operator control.
+  - **After a STOP, the run's findings on disk remain valid**, and COVERAGE reports the partial state as a legitimate result (§4.2.6). The cancelled tool call returns an error — that error is not the run's verdict, the artifacts are.
 - **Workflow runs panel:** render native `client-ui-workflow-run` session records: name, phase, per-child status, agents started vs cap, breaker state (from `log()`). The data already exists in the session log.
 - **Jobs panel:** surface `jobs-local` state instead of 1.x's process guessing.
 - **LJP run view:** `manifest.json` + findings on disk give a real progress bar — units done/failed/remaining, current unit, ETA from measured per-unit times. Honest because derived from artifacts.
@@ -253,9 +286,16 @@ The operator will not hand-edit `settings.yaml`, and a design that assumes he wi
 
 ### 4.8 Settings additions (one home for HALO knobs)
 
-A commented `halo:` block in `settings.yaml` (deployed, machine-profiled, MC-edited) holds: LJP budgets and shape profiles (`wide-sweep`: low reasoning, 24K/3K; `deep-dive`: medium, 48K/6K; `synthesis`: medium, 32K/8K), breaker K, stall threshold N, the routing table, per-machine scaling ratios, and **`maxResultChars`** (residual T0 item: not currently set, so tool results still return at the stock default; set it here — the ~2K target is a tuning call with a truncation tradeoff, so it lands as an operator-visible knob, not a silent slam).
+A commented `halo:` block in `settings.yaml` (deployed, machine-profiled, MC-edited) holds: LJP budgets and shape profiles (`wide-sweep`: low reasoning, 24K/3K; `deep-dive`: medium, 48K/6K; `synthesis`: medium, 32K/8K), breaker K, stall threshold N, the routing table, per-machine scaling ratios, and **`maxResultChars`** (residual T0 item: not currently set, so tool results return at the **stock default of 50,000 — about 14K tokens of tool result landing in the parent**. §4.2's "<25K parent context" budget *assumes* this is lowered; target ~2,000. It stays an operator-visible knob because the truncation tradeoff is a tuning call, not a silent slam).
 
-**Reasoning control (open, verified genuinely unset):** no `reasoningEfforts` mapping appears in the composed config, so per-child reasoning is not a solved native knob. Candidate mechanisms: session default via a `reasoningEfforts` map (if the provider honors it); prompt-level soft switch (Qwen `/no_think`); LM Studio per-model preset; `chat_template_kwargs.enable_thinking` (worked at the raw API once; **never verified end-to-end**). A **measured decision for the implementation plan** (Q4). F5 (91% thinking) makes it load-bearing; the spec refuses to guess.
+**Reasoning control (open, verified genuinely unset):** no `reasoningEfforts` mapping appears in the composed config, so per-child reasoning is not a solved native knob. F5 (91% thinking) makes this load-bearing. Candidates, **ranked by the v2 audit** — test in this order:
+
+1. **`GenerateOptions.reasoningEffort` via the agent/request waterfall** (replaceable per conversation step). **Test this first: the resolved value is logged in `request`/`header`, so it produces the G4 measurement for free.** A very small local plugin can set it for LJP children only. It is the only candidate that is both a mechanism *and* its own evidence.
+2. **A second pi-ai model entry with a remapped `reasoningEfforts` table**, selected per child by `agent(…, {model})`. The mechanism is already proven on this box — our settings remap `high: medium` today.
+3. Prompt-level soft switch (Qwen `/no_think`) — soft, unmeasured.
+4. LM Studio per-model preset; `chat_template_kwargs.enable_thinking` (worked at the raw API once; **never verified end-to-end** — do not assume).
+
+Q4 is answered by the measurement from candidate 1, not by opinion.
 
 ---
 
@@ -312,10 +352,10 @@ Most of v1's matrix is resolved this session against the composed 0.1.1-rc.2 con
 | V4 | Workflow engine concurrency config key + per-run `maxTotalAgents` behavior | **Probe** — 3-agent script on the live engine |
 | V5 | Two LM Link identities decode **simultaneously** (brain + 5070Ti)? | **Probe** — timed concurrent requests |
 | V6 | Is a context-pressure value injectable via the `system-prompt` plugin (present)? | **Probe** — the injection point exists; confirm runtime variable path (drives §11 plugin) |
-| V7 | Host-plane per-session cancel endpoint for MC STOP | **Probe** — apiproxy surface |
-| V8 | `subagent` continuable/background vs one-shot under headless — does the parent idle-wait cover continuable children? | **Probe** — headless run |
+| ~~V7~~ | Host-plane per-session cancel endpoint for MC STOP | **Resolved** — `POST /api/session.cancel {sessionId}`; `subagent.interrupt` for continuable children; one-shot children abort only via the parent's shared signal |
+| V8 | `subagent` continuable/background vs one-shot under headless — does the parent idle-wait cover continuable children? | **Probe** — headless run. Note the preset sets `backgroundMode: continuable`; probe with that value |
 | V9 | Spawn-child default model/reasoning inheritance from `agent-default-model` | **Probe** |
-| ~~V10~~ | Skill auto-discovery path (`skill-filesystem`) | **Resolved — present**; exact path confirmed in impl plan |
+| ~~V10~~ | Skill auto-discovery path (`skill-filesystem`) | **Resolved** — `~/.dsh/skills/<name>/SKILL.md`, rank 400, **one level deep only** (nested `**/SKILL.md` is excluded, so `skills/large-job/SKILL.md` is correct and no deeper nesting will be found) |
 | **V-A** | Do `maxConcurrentAgents`/`maxTotalAgents`/`maxRetries` **attach at runtime** at 0.1.1 (preset + retry-policy compose separately from `web --dump-config`)? | **Probe** — the PE-M1 lesson: present-in-file ≠ attaches. Verify via a composed-preset dump or a live 2-agent probe |
 
 ---
@@ -332,13 +372,15 @@ Most of v1's matrix is resolved this session against the composed 0.1.1-rc.2 con
 8. ~~rc.8 bump before or after~~ — **resolved:** on 0.1.1-rc.2.
 9. **Containment (E5):** is preset-omission of the external providers sufficient, or can a child re-enable a provider at runtime? What else must the log-check catch?
 10. **Layer packaging (§11):** is the sequenced-plugin plan the right distribution shape, and what is missing from the capability map that a second operator would need?
+11. **v2's own additions have never been audited** (§0.1b): the layer model (§11), the restricted-preset *implementation* (§4.2.7), hierarchical-reduce-by-default (§4.2.5), the single-machine scope decision, and the WP1–WP9 sequencing in the implementation plan. Review these specifically — the previous pass could not.
+12. **Containment bypass:** with the external providers omitted from the child preset, can a child re-enable one at runtime (via `subagent` config, a tool the preset still grants, or a nested workflow)? If yes, the preset is not a wall and the log-check is the only defence.
 
 ---
 
 ## 10. What gets built, in one list (the whole of HALO 2.0's new surface)
 
 1. `halo-size` + `halo-plan` + `halo-coverage` — three deterministic scripts (no model calls); coverage includes the E5 log-check.
-2. `skills/large-job/` — one skill: selection rule, protocol, canonical MAP template (dsh API, E6), hierarchical reduce, resume, normalized breaker, restricted-preset requirement, physics.
+2. `skills/large-job/` — one skill: selection rule, protocol, canonical MAP template (dsh API, E6), hierarchical reduce, resume, normalized breaker, restricted-preset requirement, **explicit per-call `timeoutMs` on every `pwsh` invocation + in-script deadlines (gap #9)**, **sequential-by-construction looping that does not rely on config (E2b)**, physics.
 3. The **restricted LJP child preset** — an agent preset omitting the external subagent providers (E5).
 4. Mission Control: derived liveness + per-session STOP + workflow/jobs/LJP panels (§4.6).
 5. Mission Control: Settings tab — live math, refusal, comment-preserving writes via the deploy machinery, drift record (§4.7).
